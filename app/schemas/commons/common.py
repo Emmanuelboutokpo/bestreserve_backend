@@ -1,5 +1,6 @@
 from typing import Generic, TypeVar, Optional, List
 from pydantic import BaseModel
+import re
 
 T = TypeVar("T")
 
@@ -35,3 +36,21 @@ class PaginationParams(BaseModel):
     @property
     def offset(self) -> int:
         return (self.page - 1) * self.page_size
+
+
+def slug(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    value = value.strip().lower()
+
+    if not value:
+        raise ValueError("Le slug ne peut pas être vide.")
+
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value):
+        raise ValueError(
+            "Le slug doit contenir uniquement des lettres minuscules, "
+            "des chiffres et des tirets."
+        )
+
+    return value

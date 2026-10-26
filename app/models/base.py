@@ -27,16 +27,6 @@ class TimestampMixin(SQLModel):
     )
 
 
-class SoftDeleteMixin(SQLModel):
-    """Ajoute le soft delete."""
-
-    deleted_at: Optional[datetime] = Field(
-        default=None,
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-    )
-
-
 class UUIDMixin(SQLModel):
     """Ajoute un UUID v4 comme clé primaire."""
 

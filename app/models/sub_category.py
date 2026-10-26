@@ -2,13 +2,12 @@
 
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import Index
 from sqlmodel import Field, Relationship
 
 from app.models.base import (
     UUIDMixin,
     TimestampMixin,
-    SoftDeleteMixin,
 )
 
 if TYPE_CHECKING:
@@ -16,8 +15,8 @@ if TYPE_CHECKING:
     from app.models.establishment import Establishment
 
 
-class SubCategory(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
-   
+class SubCategory(UUIDMixin, TimestampMixin, table=True):
+
     __tablename__ = "sub_categories"
 
     __table_args__ = (
@@ -25,12 +24,7 @@ class SubCategory(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
             "idx_subcategories_category",
             "category_id",
         ),
-        UniqueConstraint(
-            "category_id",
-            "slug",
-            name="uq_subcategory_category_slug",
-        ),
-    )
+    )  
 
     # ============================================================
     # RELATION CATEGORY
@@ -50,16 +44,10 @@ class SubCategory(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         nullable=False,
     )
 
-    slug: str = Field(
-        max_length=120,
-        nullable=False,
-    )
-
     icon: Optional[str] = Field(
         default=None,
         max_length=100,
     )
-
 
     # ============================================================
     # RELATIONS

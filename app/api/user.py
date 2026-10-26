@@ -22,7 +22,6 @@ from app.cores.redis import (
 from app.dependencies.dependencies import (
     AccessTokenBearer,
     RefreshTokenBearer,
-    get_current_user,
 )
 
 from app.emails.email import (
@@ -37,7 +36,6 @@ from app.schemas.auth import (
     RegisterRequest,
     ResetPasswordRequest,
     UserOTP,
-    UserPublic,
 )
 
 from app.services.user import UserService
@@ -484,21 +482,3 @@ async def logout(
     return {
         "message": "Déconnexion réussie."
     }
-
-
-# ============================================================
-# CURRENT USER
-# ============================================================
-
-@auth_router.get(
-    "/auth/me",
-    response_model=UserPublic,
-)
-async def get_me(
-    user=Depends(get_current_user),
-):
-    """
-    Retourne l'utilisateur actuellement connecté.
-    """
-
-    return user

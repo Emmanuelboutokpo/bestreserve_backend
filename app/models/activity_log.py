@@ -1,35 +1,28 @@
-# app/models/activity_log.py
-
-from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Column, Index, JSON
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-)
+from app.models.base import UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class ActivityLog(
-    UUIDMixin,
-    TimestampMixin,
-    table=True,
-):
+class ActivityLog(UUIDMixin, TimestampMixin, table=True):
     """
-    Journal des actions importantes effectuées sur la plateforme.
+    Journal des actions importantes effectuées sur BestRev.
 
-    Exemple :
-        - Connexion
-        - Création d'établissement
-        - Validation
-        - Suppression
-        - Modification d'une réservation
+    Exemples :
+    - Connexion et déconnexion
+    - Création ou modification d'un établissement
+    - Validation ou rejet d'un établissement
+    - Création d'une réservation
+    - Confirmation, refus ou annulation d'une réservation
+    - Enregistrement d'un paiement ou d'un remboursement
+
+    Les journaux doivent être conservés pour les besoins d'audit.
     """
 
     __tablename__ = "activity_logs"
@@ -61,6 +54,7 @@ class ActivityLog(
     user_id: Optional[UUID] = Field(
         default=None,
         foreign_key="users.id",
+        nullable=True,
     )
 
     # ============================================================
@@ -75,34 +69,43 @@ class ActivityLog(
     description: Optional[str] = Field(
         default=None,
         max_length=2000,
+        nullable=True,
     )
 
     # ============================================================
-    # ENTITE CONCERNEE
+    # ENTITÉ CONCERNÉE
     # ============================================================
 
     entity_type: Optional[str] = Field(
         default=None,
         max_length=100,
+        nullable=True,
     )
 
     entity_id: Optional[UUID] = Field(
         default=None,
+        nullable=True,
     )
 
     # ============================================================
-    # CONTEXTE
+    # CONTEXTE DE LA REQUÊTE
     # ============================================================
 
     ip_address: Optional[str] = Field(
         default=None,
         max_length=45,
+        nullable=True,
     )
 
     user_agent: Optional[str] = Field(
         default=None,
         max_length=1000,
+        nullable=True,
     )
+
+    # ============================================================
+    # MÉTADONNÉES
+    # ============================================================
 
     metadata_json: Optional[dict[str, Any]] = Field(
         default=None,

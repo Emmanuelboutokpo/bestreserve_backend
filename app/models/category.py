@@ -8,7 +8,6 @@ from sqlmodel import Field, Relationship
 from app.models.base import (
     UUIDMixin,
     TimestampMixin,
-    SoftDeleteMixin,
 )
 
 if TYPE_CHECKING:
@@ -16,17 +15,9 @@ if TYPE_CHECKING:
     from app.models.establishment import Establishment
 
 
-class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
+class Category(UUIDMixin, TimestampMixin, table=True):
   
     __tablename__ = "categories"
-
-    __table_args__ = (
-        Index(
-            "idx_categories_slug",
-            "slug",
-            unique=True,
-        ),
-    )
 
     # ============================================================
     # INFORMATIONS
@@ -34,11 +25,6 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
 
     name: str = Field(
         max_length=100,
-        nullable=False,
-    )
-
-    slug: str = Field(
-        max_length=120,
         nullable=False,
     )
 

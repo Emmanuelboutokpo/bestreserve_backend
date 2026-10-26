@@ -1,14 +1,10 @@
-# app/models/payment_condition.py
-
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy import CheckConstraint, Index
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-)
+from app.models.base import UUIDMixin, TimestampMixin
+from app.models.enums import PaymentConditionType
 
 if TYPE_CHECKING:
     from app.models.establishment_payment_condition import (
@@ -16,15 +12,29 @@ if TYPE_CHECKING:
     )
 
 
-class PaymentCondition(
-    UUIDMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    table=True,
-):
+class PaymentCondition(UUIDMixin, TimestampMixin, table=True):
+    """
+    Définit une modalité de paiement proposée par BestRev.
 
+    Exemples :
+    - paiement intégral ;
+    - paiement avec acompte ;
+    - paiement sur place.
+    """
 
     __tablename__ = "payment_conditions"
+
+    __table_args__ = (
+        Index(
+            "idx_payment_conditions_type",
+            "condition_type",
+        ),
+        CheckConstraint(
+            "percentage IS NULL OR "
+            "(percentage >= 1 AND percentage <= 100)",
+            name="ck_payment_conditions_percentage_range",
+        ),
+    )
 
     # ============================================================
     # INFORMATIONS
@@ -35,19 +45,13 @@ class PaymentCondition(
         nullable=False,
     )
 
-    slug: str = Field(
-        max_length=180,
+    condition_type: PaymentConditionType = Field(
         nullable=False,
-        unique=True,
-    )
-
-    description: Optional[str] = Field(
-        default=None,
-        max_length=1000,
     )
 
     percentage: Optional[int] = Field(
         default=None,
+        nullable=True,
     )
 
     # ============================================================

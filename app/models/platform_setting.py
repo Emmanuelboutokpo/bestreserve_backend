@@ -1,35 +1,23 @@
-# app/models/platform_setting.py
-
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Column, Index, JSON
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-)
+from app.models.base import UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class PlatformSetting(
-    UUIDMixin,
-    TimestampMixin,
-    table=True,
-):
+class PlatformSetting(UUIDMixin, TimestampMixin, table=True):
     """
-    Paramètre global de la plateforme.
+    Paramètres de configuration de la plateforme BestRev.
 
-    Exemple :
-
-        site_name
-        maintenance_mode
-        service_fee
-        default_currency
-        support_email
+    Exemples :
+    - service_fee_percent
+    - reservation_expiration_minutes
+    - default_currency
     """
 
     __tablename__ = "platform_settings"
@@ -42,7 +30,7 @@ class PlatformSetting(
     )
 
     # ============================================================
-    # PARAMETRE
+    # IDENTIFICATION DU PARAMÈTRE
     # ============================================================
 
     key: str = Field(
@@ -51,8 +39,13 @@ class PlatformSetting(
         unique=True,
     )
 
+    # ============================================================
+    # VALEURS
+    # ============================================================
+
     value: Optional[str] = Field(
         default=None,
+        nullable=True,
     )
 
     value_json: Optional[dict[str, Any]] = Field(
@@ -63,14 +56,20 @@ class PlatformSetting(
         ),
     )
 
+    # ============================================================
+    # DOCUMENTATION ET ORGANISATION
+    # ============================================================
+
     description: Optional[str] = Field(
         default=None,
         max_length=1000,
+        nullable=True,
     )
 
     section: Optional[str] = Field(
         default=None,
         max_length=100,
+        nullable=True,
     )
 
     is_public: bool = Field(
@@ -78,9 +77,14 @@ class PlatformSetting(
         nullable=False,
     )
 
+    # ============================================================
+    # TRAÇABILITÉ
+    # ============================================================
+
     updated_by: Optional[UUID] = Field(
         default=None,
         foreign_key="users.id",
+        nullable=True,
     )
 
     # ============================================================

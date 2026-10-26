@@ -3,7 +3,6 @@
 from app.models.activity_log import ActivityLog
 from app.models.amenity import Amenity
 from app.models.category import Category
-from app.models.contact_message import ContactMessage
 from app.models.establishment import Establishment
 from app.models.establishment_amenity import EstablishmentAmenity
 from app.models.establishment_payment_condition import (
@@ -21,14 +20,12 @@ from app.models.review import Review
 from app.models.sub_category import SubCategory
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.models.user_consent import UserConsent
 from app.models.validation_document import ValidationDocument
 
 __all__ = [
     "ActivityLog",
     "Amenity",
     "Category",
-    "ContactMessage",
     "Establishment",
     "EstablishmentAmenity",
     "EstablishmentPaymentCondition",
@@ -44,6 +41,5 @@ __all__ = [
     "SubCategory",
     "Transaction",
     "User",
-    "UserConsent",
     "ValidationDocument",
 ]

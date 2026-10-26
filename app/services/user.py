@@ -100,7 +100,6 @@ class UserService:
         if (
             not user
             or not user.password
-            or user.deleted_at is not None
             or user.status != enums.UserStatus.ACTIF
         ):
             return None

@@ -1,16 +1,18 @@
-# app/models/transaction.py
-
 from decimal import Decimal
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Index, JSON, Numeric, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    Index,
+    JSON,
+    Numeric,
+    UniqueConstraint,
+)
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-)
+from app.models.base import UUIDMixin, TimestampMixin
 from app.models.enums import (
     PaymentMethod,
     PaymentStatus,
@@ -26,10 +28,26 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
     __tablename__ = "transactions"
 
     __table_args__ = (
+        # --------------------------------------------------------
+        # UNICITÉ
+        # --------------------------------------------------------
         UniqueConstraint(
             "transaction_ref",
             name="uq_transactions_reference",
         ),
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_transactions_idempotency_key",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_transaction_id",
+            name="uq_transactions_provider_reference",
+        ),
+
+        # --------------------------------------------------------
+        # INDEX
+        # --------------------------------------------------------
         Index(
             "idx_transactions_user",
             "user_id",
@@ -47,10 +65,22 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
             "provider",
             "provider_transaction_id",
         ),
+        Index(
+            "idx_transactions_refund_origin",
+            "refund_of_transaction_id",
+        ),
+
+        # --------------------------------------------------------
+        # CONTRAINTES FINANCIÈRES
+        # --------------------------------------------------------
+        CheckConstraint(
+            "amount > 0",
+            name="ck_transactions_amount_positive",
+        ),
     )
 
     # ============================================================
-    # REFERENCES
+    # RÉFÉRENCES
     # ============================================================
 
     transaction_ref: str = Field(
@@ -59,13 +89,20 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
         nullable=False,
     )
 
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        nullable=True,
+    )
+
     provider_transaction_id: Optional[str] = Field(
         default=None,
         max_length=255,
+        nullable=True,
     )
 
     # ============================================================
-    # RELATIONS
+    # RELATIONS MÉTIER
     # ============================================================
 
     user_id: UUID = Field(
@@ -78,8 +115,17 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
         nullable=False,
     )
 
+    # Pour un remboursement, référence à la transaction d'origine.
+    # Ce champ reste nul pour les paiements et les transactions
+    # qui ne correspondent pas à un remboursement.
+    refund_of_transaction_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="transactions.id",
+        nullable=True,
+    )
+
     # ============================================================
-    # TRANSACTION
+    # OPÉRATION FINANCIÈRE
     # ============================================================
 
     type: TransactionType = Field(
@@ -99,6 +145,10 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
         nullable=False,
     )
 
+    # ============================================================
+    # MOYEN DE PAIEMENT
+    # ============================================================
+
     payment_method: PaymentMethod = Field(
         nullable=False,
     )
@@ -106,12 +156,21 @@ class Transaction(UUIDMixin, TimestampMixin, table=True):
     provider: Optional[str] = Field(
         default=None,
         max_length=100,
+        nullable=True,
     )
+
+    # ============================================================
+    # STATUT
+    # ============================================================
 
     status: PaymentStatus = Field(
         default=PaymentStatus.EN_ATTENTE,
         nullable=False,
     )
+
+    # ============================================================
+    # MÉTADONNÉES
+    # ============================================================
 
     metadata_json: Optional[dict[str, Any]] = Field(
         default=None,

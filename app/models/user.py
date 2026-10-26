@@ -1,27 +1,15 @@
-# app/models/user.py
-
-from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Index
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-)
-from app.models.enums import (
-    UserRole,
-    UserStatus,
-    UserProvider,
-)
+from app.models.base import UUIDMixin, TimestampMixin
+from app.models.enums import UserRole, UserStatus, UserProvider
 
 if TYPE_CHECKING:
     from app.models.profile import Profile
     from app.models.establishment import Establishment
-    from app.models.session import Session as UserSession
     from app.models.favorite import Favorite
     from app.models.notification import Notification
     from app.models.reservation import Reservation
@@ -30,8 +18,7 @@ if TYPE_CHECKING:
     from app.models.activity_log import ActivityLog
 
 
-class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
-
+class User(UUIDMixin, TimestampMixin, table=True):
     __tablename__ = "users"
 
     __table_args__ = (
@@ -39,10 +26,15 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         Index("idx_users_status", "status"),
     )
 
+    # ============================================================
+    # AUTHENTIFICATION
+    # ============================================================
+
     email: str = Field(
         max_length=255,
         nullable=False,
         unique=True,
+        index=True,
     )
 
     password: Optional[str] = Field(
@@ -50,6 +42,26 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         max_length=255,
         nullable=True,
     )
+
+    provider: UserProvider = Field(
+        default=UserProvider.LOCAL,
+        nullable=False,
+    )
+
+    token_version: int = Field(
+        default=0,
+        nullable=False,
+        ge=0,
+    )
+
+    two_factor_enabled: bool = Field(
+        default=False,
+        nullable=False,
+    )
+
+    # ============================================================
+    # AUTORISATIONS ET STATUT
+    # ============================================================
 
     role: UserRole = Field(
         default=UserRole.CLIENT,
@@ -61,27 +73,21 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         nullable=False,
     )
 
-    refreshToken : Optional[str] = None       
-
-    token_version: int = Field(
-        default=0,
-        nullable=False,
-    )
-
-    provider: UserProvider = Field(
-        default=UserProvider.LOCAL,
-        nullable=False,
-    )
-
-    two_factor_enabled: bool = Field(
-        default=False,
-        nullable=False,
-    )
+    # ============================================================
+    # TRAÇABILITÉ
+    # ============================================================
 
     created_by: Optional[UUID] = Field(
         default=None,
         foreign_key="users.id",
+        nullable=True,
     )
+
+    is_deleted: bool = Field(default=False, index=True)
+
+    # ============================================================
+    # PROFIL
+    # ============================================================
 
     profile: Optional["Profile"] = Relationship(
         back_populates="user",
@@ -91,6 +97,10 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         },
     )
 
+    # ============================================================
+    # ÉTABLISSEMENTS
+    # ============================================================
+
     establishments_owned: List["Establishment"] = Relationship(
         back_populates="owner",
         sa_relationship_kwargs={
@@ -98,6 +108,9 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         },
     )
 
+    # ============================================================
+    # FAVORIS
+    # ============================================================
 
     favorites: List["Favorite"] = Relationship(
         back_populates="user",
@@ -106,12 +119,20 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         },
     )
 
+    # ============================================================
+    # NOTIFICATIONS
+    # ============================================================
+
     notifications: List["Notification"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={
             "cascade": "all, delete-orphan",
         },
     )
+
+    # ============================================================
+    # RÉSERVATIONS
+    # ============================================================
 
     reservations: List["Reservation"] = Relationship(
         back_populates="user",
@@ -120,13 +141,25 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         },
     )
 
+    # ============================================================
+    # TRANSACTIONS FINANCIÈRES
+    # ============================================================
+
     transactions: List["Transaction"] = Relationship(
         back_populates="user",
     )
 
+    # ============================================================
+    # AVIS
+    # ============================================================
+
     reviews: List["Review"] = Relationship(
         back_populates="user",
     )
+
+    # ============================================================
+    # JOURNAUX D'ACTIVITÉ
+    # ============================================================
 
     activity_logs: List["ActivityLog"] = Relationship(
         back_populates="user",

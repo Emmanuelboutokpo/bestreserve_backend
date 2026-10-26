@@ -15,7 +15,6 @@ class AccountProfilePatch(BaseModel):
     lastName: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=30)
     bio: str | None = Field(default=None, max_length=1000)
-    country_code: str | None = Field(default=None, min_length=2, max_length=2)
     city: str | None = Field(default=None, max_length=100)
     language: str | None = Field(default=None, min_length=2, max_length=5)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
@@ -40,16 +39,7 @@ class AccountProfilePatch(BaseModel):
             raise ValueError("Numéro de téléphone invalide.")
         return value
 
-    @field_validator("country_code")
-    @classmethod
-    def normalize_country_code(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
-        value = value.upper()
-        if not value.isalpha() or not value.isascii():
-            raise ValueError("Le code pays doit contenir deux lettres.")
-        return value
-
+  
     @field_validator("language")
     @classmethod
     def validate_language(cls, value: str | None) -> str | None:
@@ -79,9 +69,9 @@ class AccountProfilePatch(BaseModel):
 class PasswordChangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=12, max_length=128)
-    confirm_password: str = Field(min_length=12, max_length=128)
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    confirm_password: str = Field(min_length=8, max_length=128)
 
     @field_validator("new_password")
     @classmethod
@@ -112,13 +102,12 @@ class AccountDeleteRequest(BaseModel):
 
     confirmation: Literal["DELETE"]
     current_password: str | None = Field(default=None, max_length=128)
-    provider_token: str | None = Field(default=None, max_length=8192)
 
     @model_validator(mode="after")
     def require_single_reauthentication(self):
-        if bool(self.current_password) == bool(self.provider_token):
+        if not bool(self.current_password):
             raise ValueError(
-                "Fournissez soit le mot de passe actuel, soit le jeton du fournisseur."
+                "Fournissez soit le mot de passe actuel !"
             )
         return self
 

@@ -4,22 +4,22 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Index
+from sqlalchemy import DateTime, Index
 from sqlmodel import Field, Relationship
 
 from app.models.base import (
     UUIDMixin,
     TimestampMixin,
+    utc_now,
 )
 from app.models.enums import NotificationType
-from app.models.base import utc_now
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
 class Notification(UUIDMixin, TimestampMixin, table=True):
-   
+
     __tablename__ = "notifications"
 
     __table_args__ = (
@@ -82,8 +82,9 @@ class Notification(UUIDMixin, TimestampMixin, table=True):
         nullable=False,
     )
 
-    read_at: Optional[datetime] = Field(
+    read_at: datetime | None = Field(
         default=None,
+        sa_type=DateTime(timezone=True),
     )
 
     # ============================================================

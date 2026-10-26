@@ -1,8 +1,6 @@
 import httpx
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-
 from app.config import settings
 from app.models import Profile, User
 from app.models.enums import UserProvider, UserRole, UserStatus

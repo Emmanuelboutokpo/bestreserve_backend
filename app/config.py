@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from decimal import Decimal
 
 
 class Settings(BaseSettings):
@@ -34,6 +35,15 @@ class Settings(BaseSettings):
     facebook_app_id: str | None = None
     facebook_app_secret: str | None = None
 
+    fedapay_api_key: str | None = None
+    fedapay_webhook_secret: str | None = None
+    fedapay_environment: str = "sandbox"
+    
+    push_encryption_key: str | None = None
+    webpush_vapid_public_key: str | None = None
+    webpush_vapid_private_key: str | None = None
+    webpush_vapid_subject: str | None = None
+
     # =========================
     # CLOUDINARY
     # =========================
@@ -48,9 +58,6 @@ class Settings(BaseSettings):
     # KKIAPAY
     # =========================
 
-   
-
-
     # =========================
     # APPLICATION
     # =========================
@@ -62,6 +69,29 @@ class Settings(BaseSettings):
     max_top_tailors_limit: int = 10
 
     default_pagination_limit: int = 20
+
+
+    SERVICE_FEE_PERCENT: Decimal = Decimal("5.0")
+
+    COMMISSION_HEBERGEMENT_PERCENT: Decimal = Decimal("10.0")
+    COMMISSION_RESTAURANT_PERCENT: Decimal = Decimal("0.0")
+    COMMISSION_LOISIR_PERCENT: Decimal = Decimal("0.0")
+
+    TAX_HEBERGEMENT_PERCENT: Decimal = Decimal("5.0")
+    TAX_RESTAURANT_PERCENT: Decimal = Decimal("5.0")
+    TAX_LOISIR_PERCENT: Decimal = Decimal("5.0")
+
+
+        # =========================
+    # KKIAPAY
+    # =========================
+
+    kkiapay_public_key: str | None = None
+    kkiapay_private_key: str | None = None
+    kkiapay_secret_key: str | None = None
+    kkiapay_sandbox: bool = True
+    kkiapay_webhook_secret: str | None = None
+
 
 
     model_config = SettingsConfigDict(

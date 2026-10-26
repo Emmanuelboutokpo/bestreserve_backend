@@ -1,16 +1,11 @@
-# app/models/review.py
-
+from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
-from datetime import datetime
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+
+from sqlalchemy import CheckConstraint, DateTime, Index, UniqueConstraint
 from sqlmodel import Field, Relationship
 
-from app.models.base import (
-    UUIDMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-)
+from app.models.base import UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -18,14 +13,15 @@ if TYPE_CHECKING:
     from app.models.reservation import Reservation
 
 
-class Review(
-    UUIDMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    table=True,
-):
+class Review(UUIDMixin, TimestampMixin, table=True):
     """
-    Avis laissé par un client après une réservation.
+    Avis laissé par un client après une réservation terminée.
+
+    Règles :
+    - Une réservation ne peut avoir qu'un seul avis.
+    - La note doit être comprise entre 1 et 5.
+    - Un avis n'est publié qu'après validation lorsqu'une
+      modération est requise.
     """
 
     __tablename__ = "reviews"
@@ -39,26 +35,6 @@ class Review(
             "rating >= 1 AND rating <= 5",
             name="ck_reviews_rating",
         ),
-        CheckConstraint(
-            "cleanliness_rating IS NULL OR "
-            "(cleanliness_rating >= 1 AND cleanliness_rating <= 5)",
-            name="ck_reviews_cleanliness",
-        ),
-        CheckConstraint(
-            "service_rating IS NULL OR "
-            "(service_rating >= 1 AND service_rating <= 5)",
-            name="ck_reviews_service",
-        ),
-        CheckConstraint(
-            "location_rating IS NULL OR "
-            "(location_rating >= 1 AND location_rating <= 5)",
-            name="ck_reviews_location",
-        ),
-        CheckConstraint(
-            "value_rating IS NULL OR "
-            "(value_rating >= 1 AND value_rating <= 5)",
-            name="ck_reviews_value",
-        ),
         Index(
             "idx_reviews_establishment",
             "establishment_id",
@@ -71,10 +47,14 @@ class Review(
             "idx_reviews_rating",
             "rating",
         ),
+        Index(
+            "idx_reviews_approval",
+            "is_approved",
+        ),
     )
 
     # ============================================================
-    # RELATIONS
+    # CLÉS ÉTRANGÈRES
     # ============================================================
 
     establishment_id: UUID = Field(
@@ -97,23 +77,9 @@ class Review(
     # ============================================================
 
     rating: int = Field(
+        ge=1,
+        le=5,
         nullable=False,
-    )
-
-    cleanliness_rating: Optional[int] = Field(
-        default=None,
-    )
-
-    service_rating: Optional[int] = Field(
-        default=None,
-    )
-
-    location_rating: Optional[int] = Field(
-        default=None,
-    )
-
-    value_rating: Optional[int] = Field(
-        default=None,
     )
 
     # ============================================================
@@ -123,10 +89,11 @@ class Review(
     comment: Optional[str] = Field(
         default=None,
         max_length=3000,
+        nullable=True,
     )
 
     # ============================================================
-    # MODERATION
+    # MODÉRATION
     # ============================================================
 
     is_approved: bool = Field(
@@ -135,7 +102,9 @@ class Review(
     )
 
     approved_at: Optional[datetime] = Field(
-       default=None,
+        default=None,
+        nullable=True,
+        sa_type=DateTime(timezone=True),
     )
 
     # ============================================================

@@ -1,5 +1,3 @@
-# app/models/enums.py
-
 from enum import Enum
 
 
@@ -20,7 +18,6 @@ class UserProvider(str, Enum):
     LOCAL = "LOCAL"
     GOOGLE = "GOOGLE"
     FACEBOOK = "FACEBOOK"
-    PHONE = "PHONE"
 
 
 class LocationType(str, Enum):
@@ -32,7 +29,6 @@ class LocationType(str, Enum):
 
 
 class EstablishmentStatus(str, Enum):
-    BROUILLON = "BROUILLON"
     EN_ATTENTE = "EN_ATTENTE"
     PUBLIE = "PUBLIE"
     REJETE = "REJETE"
@@ -46,9 +42,23 @@ class AvailabilityStatus(str, Enum):
 
 
 class PriceUnit(str, Enum):
+    """
+    Unités de tarification des établissements.
+
+    Les anciennes valeurs sont conservées pour limiter
+    les ruptures de compatibilité avec le code existant.
+    """
+
     NUIT = "NUIT"
     PERSONNE = "PERSONNE"
     MOIS = "MOIS"
+
+    # Unités complémentaires
+    PERSONNE_NUIT = "PERSONNE_NUIT"
+    GROUPE = "GROUPE"
+    PRESTATION = "PRESTATION"
+    HEURE = "HEURE"
+    CRENEAU = "CRENEAU"
 
 
 class ValidationStatus(str, Enum):
@@ -68,17 +78,29 @@ class DocumentType(str, Enum):
 
 
 class ReservationStatus(str, Enum):
+    """
+    Cycle de vie d'une réservation BestRev.
+
+    Les transitions autorisées seront contrôlées par le service métier.
+    """
+
     EN_ATTENTE = "EN_ATTENTE"
     CONFIRMEE = "CONFIRMEE"
     EN_COURS = "EN_COURS"
     TERMINEE = "TERMINEE"
+
+    REFUSEE = "REFUSEE"
     ANNULEE = "ANNULEE"
+    EXPIREE = "EXPIREE"
 
 
 class PaymentMethod(str, Enum):
     CARTE_BANCAIRE = "CARTE_BANCAIRE"
     MOBILE_MONEY = "MOBILE_MONEY"
     VIREMENT = "VIREMENT"
+
+    # Selon les conditions de paiement du partenaire
+    SUR_PLACE = "SUR_PLACE"
 
 
 class PaymentStatus(str, Enum):
@@ -114,3 +136,9 @@ class ContactStatus(str, Enum):
     NON_LU = "NON_LU"
     EN_COURS = "EN_COURS"
     TRAITE = "TRAITE"
+
+
+class PaymentConditionType(str, Enum):
+    PAIEMENT_INTEGRAL = "PAIEMENT_INTEGRAL"
+    ACOMPTE = "ACOMPTE"
+    SUR_PLACE = "SUR_PLACE"

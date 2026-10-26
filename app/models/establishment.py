@@ -10,8 +10,8 @@ from sqlmodel import Field, Relationship
 from app.models.base import (
     UUIDMixin,
     TimestampMixin,
-    SoftDeleteMixin,
 )
+
 from app.models.enums import (
     AvailabilityStatus,
     EstablishmentStatus,
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from app.models.favorite import Favorite
 
 
-class Establishment(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
+class Establishment(UUIDMixin, TimestampMixin, table=True):
 
     __tablename__ = "establishments"
 
@@ -155,11 +155,6 @@ class Establishment(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
         max_length=5000,
     )
 
-    short_description: Optional[str] = Field(
-        default=None,
-        max_length=500,
-    )
-
 
     # ============================================================
     # TARIFICATION
@@ -250,7 +245,7 @@ class Establishment(UUIDMixin, TimestampMixin, SoftDeleteMixin, table=True):
     # ============================================================
 
     status: EstablishmentStatus = Field(
-        default=EstablishmentStatus.BROUILLON,
+        default=EstablishmentStatus.EN_ATTENTE,
         nullable=False,
     )
 

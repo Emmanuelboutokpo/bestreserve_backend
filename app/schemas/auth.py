@@ -155,7 +155,6 @@ class ProfilePublic(BaseModel):
     img: Optional[str] = None
     phone: Optional[str] = None
     bio: Optional[str] = None
-    country_code: Optional[str] = None
     city: Optional[str] = None
     language: str = "fr"
     currency: str = "XOF"

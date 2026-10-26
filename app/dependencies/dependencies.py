@@ -3,7 +3,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from typing import Any, List
 from uuid import UUID
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 from fastapi import Depends, Request, status, HTTPException
 from app.utils import decode_access_token
 from app.models.user import User
@@ -51,13 +51,20 @@ class TokenBearer(HTTPBearer):
             )
 
         result = await session.execute(
-            select(User).where(
-                User.id == user_id,
-                User.deleted_at.is_(None),
-            )
-        )
+    select(User).where(
+        User.id == user_id,
+        User.is_deleted.is_(False),
+    )
+)
+
         user = result.scalars().first()
-        role = user.role.value if user and hasattr(user.role, "value") else None
+
+        role = (
+            user.role.value
+            if user and hasattr(user.role, "value")
+            else None
+        )
+
         if (
             not user
             or user.status != UserStatus.ACTIF
@@ -67,8 +74,9 @@ class TokenBearer(HTTPBearer):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token invalide ou compte indisponible.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-
+        
         return token_data
     
     def valide_token(self, token: str) -> bool:
@@ -92,7 +100,7 @@ class RefreshTokenBearer(TokenBearer):
 async def get_current_user(
     token_details: dict = Depends(AccessTokenBearer()),
     session: AsyncSession = Depends(get_session),
-):
+) -> User:
     subject = token_details.get("sub")
 
     try:
@@ -101,6 +109,7 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalide.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     statement = (
@@ -108,26 +117,37 @@ async def get_current_user(
         .options(selectinload(User.profile))
         .where(
             User.id == user_id,
-            User.deleted_at.is_(None),
+            User.is_deleted.is_(False),
         )
     )
+
     result = await session.execute(statement)
     user = result.scalars().first()
 
     if not user or user.status != UserStatus.ACTIF:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Compte indisponible.",
+            detail="Compte inexistant ou indisponible.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return user
 
-
+    
 def require_client(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.CLIENT:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cette action est réservée aux clients.",
+        )
+    return current_user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cette action est réservée aux administrateurs.",
         )
     return current_user
 
@@ -140,4 +160,4 @@ class RoleChecker:
         if current_user.role in self.allowed_roles:
             return True
 
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail='You do not have enough permissions to perform this action')
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Vous n'avez pas la permission d'accéder à cette ressource.")
