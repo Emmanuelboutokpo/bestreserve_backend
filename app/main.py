@@ -45,7 +45,10 @@ from app.api.admin import stats_router
 
 origins = [
     "http://localhost:3000",
-    "https://ton-domaine.com",
+    "http://127.0.0.1:3000",
+    "https://bestreserv.vercel.app",
+    "https://bestreserv.vercel.app/admin",
+    "https://www.bestreservs.com",
 ]
 
 @asynccontextmanager
@@ -65,12 +68,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  
-    allow_headers=["*"],  
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
 
 @app.middleware("http")
 async def maintenance_mode_gate(request, call_next):
