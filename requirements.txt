@@ -78,4 +78,3 @@ watchfiles==1.1.1
 websockets==16.0
 wrapt==2.1.2
 yarl==1.25.1
-kkiapay==0.0.6
