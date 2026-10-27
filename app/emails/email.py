@@ -277,7 +277,7 @@ def send_reset_password_email(
     token: str,
 ) -> dict:
     query = urlencode({"token": token})
-    reset_link = f"{FRONTEND_URL}/reset-password?{query}"
+    reset_link = f"{query}"
 
     content = f"""
         <p>Bonjour,</p>
@@ -293,11 +293,12 @@ def send_reset_password_email(
         </p>
 
         <div style="text-align: center; margin: 35px 0;">
-            <a href="{escape(reset_link, quote=True)}"
-               class="btn">
-                Réinitialiser mon mot de passe
-            </a>
+            Jeton de réinitialisation : <strong>{escape(token)}</strong>
         </div>
+        <p>
+            Vous pouvez également copier ce jeton et le coller
+            dans le formulaire de réinitialisation sur notre site.
+        </p>
 
         <p>
             Si vous n'êtes pas à l'origine de cette demande,
