@@ -20,18 +20,32 @@ establishments_router = APIRouter(
     tags=["Établissements"],
 )
 
-
 @establishments_router.get(
     "",
     response_model=EstablishmentPage,
     summary="Liste publique des établissements",
 )
 async def list_establishments(
-    # Filtres existants
-    q: Optional[str] = Query(None, min_length=2, max_length=200),
+    # Recherche textuelle
+    q: Optional[str] = Query(
+        None,
+        min_length=2,
+        max_length=200,
+        description="Recherche par nom ou description",
+    ),
+
+    # Filtres principaux
     category_id: Optional[UUID] = None,
     subcategory_id: Optional[UUID] = None,
     location_id: Optional[UUID] = None,
+
+    # Équipements : plusieurs identifiants possibles
+    amenity_ids: Optional[list[UUID]] = Query(
+        None,
+        description="Identifiants des équipements recherchés",
+    ),
+
+    # Prix et note
     minimum_price: Optional[Decimal] = Query(None, ge=0),
     maximum_price: Optional[Decimal] = Query(None, ge=0),
     minimum_rating: Optional[Decimal] = Query(None, ge=0, le=5),
@@ -78,7 +92,7 @@ async def list_establishments(
         description="Nombre de participants",
     ),
 
-    # Tri et pagination
+    # Tri
     sort: Literal[
         "newest",
         "rating",
@@ -86,18 +100,27 @@ async def list_establishments(
         "price_desc",
         "name",
     ] = "newest",
+
+    # Pagination
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 
+    # Base de données
     db: AsyncSession = Depends(get_session),
 ):
     return await establishment_service.list_establishments(
         db,
-        # Filtres existants
+
+        # Recherche textuelle
         q=q,
+
+        # Filtres principaux
         category_id=category_id,
         subcategory_id=subcategory_id,
         location_id=location_id,
+        amenity_ids=amenity_ids,
+
+        # Prix et note
         minimum_price=minimum_price,
         maximum_price=maximum_price,
         minimum_rating=minimum_rating,
@@ -123,6 +146,7 @@ async def list_establishments(
         limit=limit,
         offset=offset,
     )
+
 
 # ---------- ÉTABLISSEMENTS POPULAIRES ----------
 

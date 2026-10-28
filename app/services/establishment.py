@@ -380,6 +380,7 @@ class EstablishmentService:
         category_id: Optional[UUID] = None,
         subcategory_id: Optional[UUID] = None,
         location_id: Optional[UUID] = None,
+        amenity_ids: Optional[list[UUID]] = None,
         minimum_price: Optional[Decimal] = None,
         maximum_price: Optional[Decimal] = None,
         minimum_rating: Optional[Decimal] = None,
@@ -493,6 +494,23 @@ class EstablishmentService:
         if location_id is not None:
             query = query.where(
                 Establishment.location_id == location_id
+            )
+
+        if amenity_ids:
+            unique_amenity_ids = set(amenity_ids)
+
+            query = query.where(
+                Establishment.id.in_(
+                    select(EstablishmentAmenity.establishment_id)
+                    .where(
+                        EstablishmentAmenity.amenity_id.in_(unique_amenity_ids)
+                    )
+                    .group_by(EstablishmentAmenity.establishment_id)
+                    .having(
+                        func.count(EstablishmentAmenity.amenity_id)
+                        == len(unique_amenity_ids)
+                    )
+                )
             )
 
         if minimum_price is not None:
