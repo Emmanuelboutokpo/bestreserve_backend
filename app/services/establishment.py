@@ -3,17 +3,14 @@ import unicodedata
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
+from datetime import date, time
 
-import cloudinary
-from cloudinary import uploader
 from fastapi import HTTPException, Request, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
 from app.models import (
     ActivityLog,
     Category,
@@ -21,14 +18,12 @@ from app.models import (
     EstablishmentAmenity,
     EstablishmentPaymentCondition,
     Location,
-    Photo,
     Reservation,
     Review,
     SubCategory,
     User,
 )
 from app.models.enums import (
-    AvailabilityStatus,
     EstablishmentStatus,
     ReservationStatus,
 )
@@ -391,7 +386,24 @@ class EstablishmentService:
         sort: str = "newest",
         limit: int = 20,
         offset: int = 0,
+        # Hébergement
+        check_in: Optional[date] = None,
+        check_out: Optional[date] = None,
+        # Restaurant
+        reservation_date: Optional[date] = None,
+        arrival_time: Optional[time] = None,
+        # Critère commun
+        guests: Optional[int] = None,
+        # Loisirs
+        activity_type_id: Optional[UUID] = None,
+        activity_date: Optional[date] = None,
+        participants: Optional[int] = None,
     ) -> dict[str, Any]:
+
+        # ---------------------------------------------------------
+        # 1. VALIDATIONS
+        # ---------------------------------------------------------
+
         if (
             minimum_price is not None
             and maximum_price is not None
@@ -402,10 +414,53 @@ class EstablishmentService:
                 detail="Le prix minimum ne peut pas dépasser le prix maximum.",
             )
 
+        if (check_in is None) != (check_out is None):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Les dates d'arrivée et de départ doivent être renseignées ensemble.",
+            )
+
+        if (
+            check_in is not None
+            and check_out is not None
+            and check_out <= check_in
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La date de départ doit être postérieure à la date d'arrivée.",
+            )
+
+        if (reservation_date is None) != (arrival_time is None):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La date et l'heure d'arrivée au restaurant doivent être renseignées ensemble.",
+            )
+
+        if guests is not None and guests < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le nombre de personnes doit être supérieur ou égal à 1.",
+            )
+
+        if participants is not None and participants < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le nombre de participants doit être supérieur ou égal à 1.",
+            )
+
+        # ---------------------------------------------------------
+        # 2. REQUÊTE DE BASE
+        # ---------------------------------------------------------
+
         query = self._list_query()
+
+        # ---------------------------------------------------------
+        # 3. RECHERCHE TEXTUELLE
+        # ---------------------------------------------------------
 
         if q:
             q = q.strip()
+
             if len(q) < 2:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -413,6 +468,7 @@ class EstablishmentService:
                 )
 
             pattern = f"%{q}%"
+
             query = query.where(
                 or_(
                     Establishment.name.ilike(pattern),
@@ -420,17 +476,21 @@ class EstablishmentService:
                 )
             )
 
-        if category_id:
+        # ---------------------------------------------------------
+        # 4. FILTRES EXISTANTS
+        # ---------------------------------------------------------
+
+        if category_id is not None:
             query = query.where(
                 Establishment.category_id == category_id
             )
 
-        if subcategory_id:
+        if subcategory_id is not None:
             query = query.where(
                 Establishment.subcategory_id == subcategory_id
             )
 
-        if location_id:
+        if location_id is not None:
             query = query.where(
                 Establishment.location_id == location_id
             )
@@ -450,6 +510,136 @@ class EstablishmentService:
                 Establishment.rating >= minimum_rating
             )
 
+        # ---------------------------------------------------------
+        # 5. FILTRE PAR TYPE D'ACTIVITÉ
+        # ---------------------------------------------------------
+
+        # Le type d'activité correspond à la sous-catégorie.
+        if activity_type_id is not None:
+            query = query.where(
+                Establishment.subcategory_id == activity_type_id
+            )
+
+        # ---------------------------------------------------------
+        # 6. DISPONIBILITÉ DE L'HÉBERGEMENT
+        # ---------------------------------------------------------
+
+        if check_in is not None and check_out is not None:
+
+            # Recherche d'une réservation active chevauchant le séjour.
+            overlapping_reservation = (
+                select(Reservation.id)
+                .where(
+                    Reservation.establishment_id == Establishment.id,
+                    Reservation.status.in_(
+                        self.ACTIVE_RESERVATION_STATUSES
+                    ),
+                    Reservation.start_date < check_out,
+                    Reservation.end_date > check_in,
+                )
+                .exists()
+            )
+
+            # Une réservation chevauchante exclut l'établissement.
+            query = query.where(~overlapping_reservation)
+
+        # ---------------------------------------------------------
+        # 7. CAPACITÉ POUR L'HÉBERGEMENT
+        # ---------------------------------------------------------
+
+        if guests is not None:
+            query = query.where(
+                or_(
+                    Establishment.capacity.is_(None),
+                    Establishment.capacity >= guests,
+                )
+            )
+
+        # ---------------------------------------------------------
+        # 8. RESTAURANT : CAPACITÉ AU CRÉNEAU DEMANDÉ
+        # ---------------------------------------------------------
+
+        if (
+            reservation_date is not None
+            and arrival_time is not None
+            and guests is not None
+        ):
+            booked_people = (
+                select(
+                    func.coalesce(
+                        func.sum(
+                            Reservation.adults + Reservation.children
+                        ),
+                        0,
+                    )
+                )
+                .where(
+                    Reservation.establishment_id == Establishment.id,
+                    Reservation.status.in_(
+                        self.ACTIVE_RESERVATION_STATUSES
+                    ),
+                    Reservation.reservation_date == reservation_date,
+                    Reservation.start_time <= arrival_time,
+                    or_(
+                        Reservation.end_time.is_(None),
+                        Reservation.end_time > arrival_time,
+                    ),
+                )
+                .correlate(Establishment)
+                .scalar_subquery()
+            )
+
+            query = query.where(
+                or_(
+                    Establishment.capacity.is_(None),
+                    Establishment.capacity - booked_people >= guests,
+                )
+            )
+
+        # ---------------------------------------------------------
+        # 9. LOISIRS : CAPACITÉ À LA DATE DEMANDÉE
+        # ---------------------------------------------------------
+
+        if activity_date is not None and participants is not None:
+
+            booked_participants = (
+                select(
+                    func.coalesce(
+                        func.sum(
+                            Reservation.adults + Reservation.children
+                        ),
+                        0,
+                    )
+                )
+                .where(
+                    Reservation.establishment_id == Establishment.id,
+                    Reservation.status.in_(
+                        self.ACTIVE_RESERVATION_STATUSES
+                    ),
+                    or_(
+                        Reservation.reservation_date == activity_date,
+                        and_(
+                            Reservation.reservation_date.is_(None),
+                            Reservation.start_date == activity_date,
+                        ),
+                    ),
+                )
+                .correlate(Establishment)
+                .scalar_subquery()
+            )
+
+            query = query.where(
+                or_(
+                    Establishment.capacity.is_(None),
+                    Establishment.capacity - booked_participants
+                    >= participants,
+                )
+            )
+
+        # ---------------------------------------------------------
+        # 10. TRI
+        # ---------------------------------------------------------
+
         order_by = {
             "newest": Establishment.created_at.desc(),
             "rating": Establishment.rating.desc(),
@@ -460,16 +650,25 @@ class EstablishmentService:
 
         query = query.order_by(order_by)
 
-        # Le total doit appliquer exactement les mêmes filtres.
+        # ---------------------------------------------------------
+        # 11. TOTAL AVANT PAGINATION
+        # ---------------------------------------------------------
+
         count_query = select(func.count()).select_from(
             query.order_by(None).subquery()
         )
+
         total_result = await db.execute(count_query)
         total = total_result.scalar_one()
+
+        # ---------------------------------------------------------
+        # 12. RÉSULTATS PAGINÉS
+        # ---------------------------------------------------------
 
         result = await db.execute(
             query.offset(offset).limit(limit)
         )
+
         establishments = result.scalars().unique().all()
 
         return {
@@ -482,25 +681,163 @@ class EstablishmentService:
             "offset": offset,
         }
 
+    async def list_popular_establishments(
+        self,
+        db: AsyncSession,
+        *,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Retourne les établissements publics les plus populaires.
+
+        Classement :
+        1. Nombre d'avis décroissant.
+        2. Note moyenne décroissante.
+        3. Date de création décroissante.
+        """
+
+        query = (
+            self._list_query()
+            .order_by(
+                func.coalesce(
+                    Establishment.reviews_count, 0
+                ).desc(),
+                func.coalesce(
+                    Establishment.rating, 0
+                ).desc(),
+                Establishment.created_at.desc(),
+            )
+        )
+
+        # Compter uniquement les établissements publiés.
+        count_query = select(func.count()).select_from(
+            query.order_by(None).subquery()
+        )
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar_one()
+
+        # Récupérer les établissements populaires.
+        result = await db.execute(
+            query.offset(offset).limit(limit)
+        )
+
+        establishments = result.scalars().unique().all()
+
+        return {
+            "items": [
+                self.serialize_list_item(establishment)
+                for establishment in establishments
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    async def list_nearby_establishments(
+        self,
+        db: AsyncSession,
+        *,
+        latitude: float,
+        longitude: float,
+        radius_km: float = 10,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Retourne les établissements publiés situés dans un rayon donné,
+        classés du plus proche au plus éloigné.
+        """
+
+        # Rayon moyen de la Terre en kilomètres.
+        earth_radius_km = 6371.0
+
+        # Formule de Haversine, sous forme SQL.
+        lat1 = func.radians(latitude)
+        lon1 = func.radians(longitude)
+        lat2 = func.radians(Establishment.latitude)
+        lon2 = func.radians(Establishment.longitude)
+
+        delta_lat = lat2 - lat1
+        delta_lon = lon2 - lon1
+
+        haversine = (
+            func.pow(func.sin(delta_lat / 2), 2)
+            + func.cos(lat1)
+            * func.cos(lat2)
+            * func.pow(func.sin(delta_lon / 2), 2)
+        )
+
+        # Protection contre les imprécisions numériques.
+        safe_haversine = func.least(
+            1.0,
+            func.greatest(0.0, haversine),
+        )
+
+        distance_km = (
+            2
+            * earth_radius_km
+            * func.asin(func.sqrt(safe_haversine))
+        )
+
+        query = (
+            self._list_query()
+            .where(
+                Establishment.latitude.is_not(None),
+                Establishment.longitude.is_not(None),
+                distance_km <= radius_km,
+            )
+            .order_by(
+                distance_km.asc(),
+                Establishment.id.asc(),
+            )
+        )
+
+        # Nombre total de résultats correspondant au rayon.
+        count_query = select(func.count()).select_from(
+            query.order_by(None).subquery()
+        )
+
+        count_result = await db.execute(count_query)
+        total = count_result.scalar_one()
+
+        # Résultats paginés.
+        result = await db.execute(
+            query.offset(offset).limit(limit)
+        )
+
+        establishments = result.scalars().unique().all()
+
+        return {
+            "items": [
+                self.serialize_list_item(establishment)
+                for establishment in establishments
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     async def get_establishment_by_slug(
         self,
         db: AsyncSession,
         slug: str,
     ) -> Establishment:
-        result = await db.execute(
+            result = await db.execute(
             self._detail_query().where(
-                func.lower(Establishment.slug) == slug.lower()
+                    func.lower(Establishment.slug) == slug.lower()
+                )
             )
-        )
-        establishment = result.scalars().unique().first()
+            establishment = result.scalars().unique().first()
 
-        if establishment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Établissement introuvable.",
-            )
+            if establishment is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Établissement introuvable.",
+                )
 
-        return establishment
+            return establishment
 
     async def get_establishment_by_id(
         self,

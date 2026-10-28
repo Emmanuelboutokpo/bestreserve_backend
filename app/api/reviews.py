@@ -16,25 +16,6 @@ from app.services import reviews as review_service
 reviews_router = APIRouter(tags=["Avis"])
 
 
-@reviews_router.get(
-    "/establishments/{establishment_id}/reviews",
-    response_model=list[ReviewPublic],
-    summary="Lister les avis publics d'un établissement",
-)
-async def list_establishment_reviews(
-    establishment_id: UUID,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    session: AsyncSession = Depends(get_session),
-):
-    return await review_service.list_establishment_reviews(
-        establishment_id=establishment_id,
-        limit=limit,
-        offset=offset,
-        session=session,
-    )
-
-
 @reviews_router.post(
     "/establishments/{establishment_id}/reviews",
     response_model=ReviewPublic,
