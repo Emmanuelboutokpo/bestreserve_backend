@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.enums import PaymentMethod, PaymentStatus
+from app.models.enums import PaymentMethod, PaymentStatus, ReservationStatus, TransactionType
 
 
 class CheckoutRequest(BaseModel):
@@ -63,11 +63,6 @@ class PaymentRefundRequest(BaseModel):
         return value
 
 
-class AdminPaymentPublic(PaymentPublic):
-    id: UUID
-    user_id: UUID
-    reservation_id: UUID
-    provider_transaction_id: str | None
 
 
 class FedaPayCheckoutPayload(BaseModel):
@@ -78,3 +73,39 @@ class FedaPayCheckoutPayload(BaseModel):
     merchant_reference: str = Field(max_length=40)
     custom_metadata: dict[str, str]
     customer: dict
+
+
+class AdminReservationSummary(BaseModel):
+    reference: str
+    establishment_name: str | None = None
+    category: str | None = None
+
+    reservation_date: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+    status: ReservationStatus
+    payment_status: PaymentStatus
+
+    total: Decimal
+    amount_paid: Decimal
+    balance_due: Decimal
+
+
+class AdminClientSummary(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class AdminPaymentPublic(PaymentPublic):
+    id: UUID
+
+    type: TransactionType
+    payment_method: PaymentMethod
+
+    provider_transaction_id: str | None = None
+
+    reservation: AdminReservationSummary
+    client: AdminClientSummary

@@ -213,6 +213,14 @@ class ReservationUpdate(BaseModel):
 
         return self
 
+class ReservationEstablishmentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    slug: str
+    address: str
+
 
 # =========================================================
 # RÉSERVATION PUBLIQUE
@@ -223,7 +231,9 @@ class ReservationPublic(BaseModel):
 
     id: UUID
     reference: str
+
     establishment_id: UUID
+    establishment: ReservationEstablishmentPublic | None = None
 
     category: str | None
 
@@ -259,7 +269,7 @@ class ReservationPublic(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
+    
 # =========================================================
 # RÉSERVATION ADMINISTRATEUR
 # =========================================================

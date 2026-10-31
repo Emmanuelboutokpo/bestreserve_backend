@@ -5,6 +5,8 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy.orm import selectinload
+from pydantic import BaseModel, Field
 
 from app.helpers.cloudinary import (
     AVATAR_FOLDER,
@@ -400,6 +402,189 @@ class AccountService:
             )
         await session.commit()
         return {"message": "Notification supprimée."}
+        # ============================================================
+    # ADMIN - GESTION DES COMPTES UTILISATEURS
+    # ============================================================
+
+    async def _get_managed_user(
+        self,
+        user_id: UUID,
+        session: AsyncSession,
+        allow_admin: bool = False,
+    ):
+        result = await session.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.id == user_id)
+        )
+
+        user = result.scalars().first()
+
+        if user is None or getattr(user, "is_deleted", False):
+            raise HTTPException(
+                status_code=404,
+                detail="Utilisateur introuvable."
+            )
+
+        role = getattr(user.role, "value", user.role)
+
+        if role == "ADMIN" and not allow_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Cette opération ne peut pas être effectuée sur un compte administrateur."
+            )
+
+        return user
+
+
+    async def admin_update_profile(
+        self,
+        user_id: UUID,
+        data: AccountProfilePatch,
+        session: AsyncSession,
+    ) -> User:
+        """L'administrateur modifie le profil d'un client."""
+
+        user = await self._get_managed_user(user_id, session)
+
+        profile = self._profile_or_create(user, session)
+
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(profile, field, value)
+
+        await session.commit()
+        await session.refresh(user, ["profile"])
+
+        return user
+
+    async def admin_change_password(
+        self,
+        user_id: UUID,
+        new_password: str,
+        session: AsyncSession,
+    ) -> dict:
+        """L'administrateur réinitialise le mot de passe d'un client."""
+
+        user = await self._get_managed_user(user_id, session)
+
+        user.password = generate_password_hash(new_password)
+
+        # Invalider les anciens JWT
+        user.token_version += 1
+
+        # Le compte devient un compte avec authentification locale
+        user.provider = UserProvider.LOCAL
+
+        await session.commit()
+
+        return {
+            "message": "Mot de passe réinitialisé avec succès. "
+            "L'utilisateur devra se reconnecter."
+        }
+
+    async def admin_upload_avatar(
+        self,
+        user_id: UUID,
+        avatar: UploadFile,
+        session: AsyncSession,
+    ):
+        user = await self._get_managed_user(
+            user_id,
+            session,
+            allow_admin=True
+        )
+
+        return await self.upload_avatar(user, avatar, session)
+
+
+    async def admin_delete_avatar(
+        self,
+        user_id: UUID,
+        session: AsyncSession,
+    ):
+        user = await self._get_managed_user(
+            user_id,
+            session,
+            allow_admin=True
+        )
+
+        return await self.delete_avatar(user, session)
+
+    async def admin_delete_account(
+        self,
+        user_id: UUID,
+        session: AsyncSession,
+    ) -> dict:
+        """
+        Désactive et anonymise un compte client.
+
+        Les réservations et les transactions historiques sont conservées.
+        """
+
+        user = await self._get_managed_user(user_id, session)
+
+        deleted_email = f"deleted-{user.id}@deleted.invalid"
+
+        # Conserver les réservations historiques et leur propriétaire.
+        reservation_result = await session.execute(
+            select(Reservation).where(
+                Reservation.user_id == user.id
+            )
+        )
+
+        for reservation in reservation_result.scalars().all():
+            reservation.client_first_name = "Compte"
+            reservation.client_last_name = "supprimé"
+            reservation.client_email = deleted_email
+            reservation.client_phone = None
+
+        # Supprimer les données personnelles non historiques.
+        await session.execute(
+            delete(Favorite).where(Favorite.user_id == user.id)
+        )
+
+        await session.execute(
+            delete(Notification).where(Notification.user_id == user.id)
+        )
+
+        await session.execute(
+            delete(ActivityLog).where(ActivityLog.user_id == user.id)
+        )
+
+        profile = user.profile
+
+        if profile and profile.img:
+            public_id = extract_public_id_from_url(
+                profile.img,
+                expected_folder=AVATAR_FOLDER,
+            )
+
+            if public_id:
+                try:
+                    await destroy_image(
+                        public_id,
+                        expected_folder=AVATAR_FOLDER,
+                    )
+                except Exception:
+                    pass
+
+        if profile is not None:
+            await session.delete(profile)
+
+        user.is_deleted = True
+        user.email = deleted_email
+        user.password = None
+        user.provider = UserProvider.LOCAL
+        user.token_version += 1
+
+        await session.commit()
+
+        return {
+            "message": (
+                "Compte désactivé et anonymisé avec succès. "
+                "Les réservations historiques ont été conservées."
+            )
+        }
 
 
  

@@ -32,6 +32,7 @@ from app.models.enums import (
 from app.models.user import User
 from app.models.reservation import Reservation
 from app.models.transaction import Transaction
+from app.models.establishment import Establishment
 
 logger = logging.getLogger(__name__)
 
@@ -674,25 +675,50 @@ def _enum_value(value: Any) -> str | None:
 def _payment_to_dict(
     transaction: Transaction,
     reservation: Reservation,
+    establishment: Establishment,
 ) -> dict[str, Any]:
-    """Construit la représentation administrative d'une transaction."""
+
     return {
         "id": transaction.id,
         "transaction_ref": transaction.transaction_ref,
         "provider_transaction_id": transaction.provider_transaction_id,
-        "user_id": transaction.user_id,
-        "reservation_id": transaction.reservation_id,
-        "reservation_reference": reservation.reference,
+
         "type": _enum_value(transaction.type),
         "amount": transaction.amount,
         "currency": transaction.currency,
         "payment_method": _enum_value(transaction.payment_method),
         "provider": transaction.provider,
         "status": _enum_value(transaction.status),
+
         "created_at": transaction.created_at,
         "updated_at": transaction.updated_at,
-    }
 
+        # Informations sur la réservation
+        "reservation": {
+            "reference": reservation.reference,
+            "establishment_name": establishment.name,
+            "category": reservation.category,
+
+            "reservation_date": reservation.reservation_date,
+            "start_date": reservation.start_date,
+            "end_date": reservation.end_date,
+
+            "status": _enum_value(reservation.status),
+            "payment_status": _enum_value(reservation.payment_status),
+
+            "total": reservation.total,
+            "amount_paid": reservation.amount_paid,
+            "balance_due": reservation.balance_due,
+        },
+
+        # Informations sur le client
+        "client": {
+            "first_name": reservation.client_first_name,
+            "last_name": reservation.client_last_name,
+            "email": reservation.client_email,
+            "phone": reservation.client_phone,
+        },
+    }
 
 def _build_date_filters(
     start_date: date | None,
@@ -846,16 +872,22 @@ async def list_admin_payments(
         search=search,
     )
 
+    # Nombre total de transactions
     count_result = await session.execute(
         select(func.count(Transaction.id)).where(*filters)
     )
     total = count_result.scalar_one()
 
+    # Récupération des transactions, réservations et établissements
     result = await session.execute(
-        select(Transaction, Reservation)
+        select(Transaction, Reservation, Establishment)
         .join(
             Reservation,
             Reservation.id == Transaction.reservation_id,
+        )
+        .join(
+            Establishment,
+            Establishment.id == Reservation.establishment_id,
         )
         .where(*filters)
         .order_by(
@@ -870,8 +902,12 @@ async def list_admin_payments(
 
     return {
         "items": [
-            _payment_to_dict(transaction, reservation)
-            for transaction, reservation in rows
+            _payment_to_dict(
+                transaction,
+                reservation,
+                establishment,
+            )
+            for transaction, reservation, establishment in rows
         ],
         "pagination": {
             "page": page,
@@ -880,7 +916,6 @@ async def list_admin_payments(
             "pages": (total + page_size - 1) // page_size,
         },
     }
-
 
 # ============================================================
 # DÉTAIL D'UNE TRANSACTION
@@ -891,12 +926,20 @@ async def get_admin_payment(
     transaction_id: UUID,
     session: AsyncSession,
 ) -> dict[str, Any]:
-    """Retourne le détail d'une transaction."""
+
     result = await session.execute(
-        select(Transaction, Reservation)
+        select(
+            Transaction,
+            Reservation,
+            Establishment,
+        )
         .join(
             Reservation,
             Reservation.id == Transaction.reservation_id,
+        )
+        .join(
+            Establishment,
+            Establishment.id == Reservation.establishment_id,
         )
         .where(Transaction.id == transaction_id)
     )
@@ -909,10 +952,13 @@ async def get_admin_payment(
             detail="Transaction introuvable.",
         )
 
-    transaction, reservation = pair
+    transaction, reservation, establishment = pair
 
-    return _payment_to_dict(transaction, reservation)
-
+    return _payment_to_dict(
+        transaction,
+        reservation,
+        establishment,
+    )
 
 # ============================================================
 # STATISTIQUES DES PAIEMENTS

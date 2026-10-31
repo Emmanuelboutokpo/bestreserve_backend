@@ -1001,22 +1001,41 @@ async def reservation_quote(
 # ---------------------------------------------------------------------------
 
 async def get_client_reservation(
-    reservation_id: UUID, user_id: UUID, session: AsyncSession, *, for_update: bool = False
+    reservation_id: UUID,
+    user_id: UUID,
+    session: AsyncSession,
+    *,
+    for_update: bool = False
 ) -> Reservation:
-    stmt = select(Reservation).where(Reservation.id == reservation_id, Reservation.user_id == user_id)
+    stmt = (
+        select(Reservation)
+        .options(selectinload(Reservation.establishment))
+        .where(
+            Reservation.id == reservation_id,
+            Reservation.user_id == user_id
+        )
+    )
+
     if for_update:
         stmt = stmt.with_for_update()
+
     result = await session.execute(stmt)
     reservation = result.scalars().first()
+
     if not reservation:
         raise _http_error(404, "Réservation introuvable.")
+
     return reservation
 
 
 async def get_admin_reservation(
     reservation_id: UUID, session: AsyncSession, *, for_update: bool = False
 ) -> Reservation:
-    stmt = select(Reservation).where(Reservation.id == reservation_id)
+    stmt = (
+    select(Reservation)
+    .options(selectinload(Reservation.establishment))
+    .where(Reservation.id == reservation_id)
+)
     if for_update:
         stmt = stmt.with_for_update()
     result = await session.execute(stmt)
@@ -1221,10 +1240,14 @@ async def list_client_reservations(
 
     # 3. Construire la requête de base
     base = _apply_filters(
-        select(Reservation).where(
-            Reservation.user_id == user_id
-        ),
-        status_filter=selected_status,
+    select(Reservation)
+    .options(
+        selectinload(Reservation.establishment)
+    )
+    .where(
+        Reservation.user_id == user_id
+    ),
+    status_filter=selected_status,
     )
 
     # 4. Compter le nombre total de réservations
@@ -1266,16 +1289,26 @@ async def list_client_reservations(
     }
 
 async def get_client_reservation_by_reference(
-    reference: str, user_id: UUID, session: AsyncSession
+    reference: str,
+    user_id: UUID,
+    session: AsyncSession
 ) -> Reservation:
-    result = await session.execute(
-        select(Reservation).where(Reservation.reference == reference, Reservation.user_id == user_id)
+    stmt = (
+        select(Reservation)
+        .options(selectinload(Reservation.establishment))
+        .where(
+            Reservation.reference == reference,
+            Reservation.user_id == user_id
+        )
     )
-    reservation = result.scalars().first()
-    if not reservation:
-        raise _http_error(404, "Réservation introuvable.")
-    return reservation
 
+    result = await session.execute(stmt)
+    reservation = result.scalars().first()
+
+    if reservation is None:
+        raise _http_error(404, "Réservation introuvable.")
+
+    return reservation
 
 async def list_admin_reservations(
     session: AsyncSession,
@@ -1302,14 +1335,15 @@ async def list_admin_reservations(
 
     # Requête de base avec les filtres
     base = _apply_filters(
-        select(Reservation),
+        select(Reservation).options(
+            selectinload(Reservation.establishment)
+        ),
         status_filter=selected_status,
         establishment_id=establishment_id,
         user_id=user_id,
         start_date=start_date,
         end_date=end_date,
     )
-
     # Recherche par référence, email ou téléphone
     if search and search.strip():
         term = f"%{search.strip()}%"

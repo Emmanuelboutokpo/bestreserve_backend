@@ -6,7 +6,7 @@ from app.api.admin.admin_users import admin_user_router
 from app.api.account import account_router
 from app.api.categories import categories_router
 from app.api.subcategories import subcategories_router
-
+from app.api.admin.admin_accounts import admin_account_router
 from app.api.amenities import (
     admin_amenities_router,
     admin_establishment_amenities_router,
@@ -34,7 +34,8 @@ from app.api.admin.payments import admin_payments_router
 from app.api.admin.admin_notifications import admin_notifications_router
 from app.api.reviews import reviews_router
 from app.api.admin.reviews import admin_reviews_router
-
+from app.api.admin.payment_conditions import admin_payment_conditions_router
+from app.api.payment_conditions import payment_conditions_router
 from app.api.user import auth_router
 from app.api.oauth import oauth_router
 from app.cores.db import engine, init_db
@@ -47,7 +48,7 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://bestreserv.vercel.app",
-    "https://bestreserv.vercel.app/admin",
+    "https://bestreservs.com",
     "https://www.bestreservs.com",
 ]
 
@@ -95,7 +96,9 @@ async def maintenance_mode_gate(request, call_next):
         "/api/v1/health",
         "/api/v1/version",
     }
+
     is_admin_path = path.startswith("/api/v1/admin/")
+
     if (
         maintenance_enabled
         and path.startswith("/api/v1/")
@@ -111,7 +114,7 @@ async def maintenance_mode_gate(request, call_next):
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(oauth_router, prefix="/api/v1")
-app.include_router(admin_user_router, prefix="/api/v1")
+app.include_router(admin_account_router, prefix="/api/v1")
 app.include_router(account_router, prefix="/api/v1")
 app.include_router(locations_router, prefix="/api/v1")
 app.include_router(admin_locations_router, prefix="/api/v1")
@@ -138,3 +141,12 @@ app.include_router(admin_notifications_router, prefix="/api/v1")
 app.include_router(reviews_router)
 app.include_router(admin_reviews_router)
 app.include_router(stats_router, prefix="/api/v1")
+app.include_router(
+    admin_payment_conditions_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    payment_conditions_router,
+    prefix="/api/v1",
+)

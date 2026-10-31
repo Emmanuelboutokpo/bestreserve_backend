@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 from uuid import UUID
-
+from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.cores.db import get_session
