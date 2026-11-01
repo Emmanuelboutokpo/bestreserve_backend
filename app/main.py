@@ -115,6 +115,7 @@ async def maintenance_mode_gate(request, call_next):
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(oauth_router, prefix="/api/v1")
 app.include_router(admin_account_router, prefix="/api/v1")
+app.include_router(admin_user_router, prefix="/api/v1")
 app.include_router(account_router, prefix="/api/v1")
 app.include_router(locations_router, prefix="/api/v1")
 app.include_router(admin_locations_router, prefix="/api/v1")
