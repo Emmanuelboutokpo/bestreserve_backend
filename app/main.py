@@ -47,7 +47,7 @@ from app.api.admin import stats_router
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://bestreserv.vercel.app",
+    "https://bestreservs.vercel.app",
     "https://bestreservs.com",
     "https://www.bestreservs.com",
 ]
