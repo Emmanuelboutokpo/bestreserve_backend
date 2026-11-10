@@ -21,6 +21,7 @@ from app.services.user import UserService
 from app.schemas.account import AccountProfilePatch
 from app.schemas.payment_condition import PaymentConditionCreate
 from app.services.payment import _checkout_amount
+from app.services.reservation import _find_idempotent
 from app.models.enums import (
     PaymentConditionType,
     PaymentMethod,
@@ -687,3 +688,28 @@ def test_reservation_response_includes_selected_payment_condition():
     response = ReservationPublic.model_validate(reservation)
 
     assert response.payment_condition == condition
+
+
+@pytest.mark.anyio
+async def test_idempotent_reservation_lookup_eager_loads_establishment():
+    reservation = object()
+    session = _session(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                scalars=lambda: SimpleNamespace(first=lambda: reservation)
+            )
+        )
+    )
+
+    result = await _find_idempotent(
+        session,
+        user_id=uuid4(),
+        key="request-key",
+    )
+
+    statement = session.execute.await_args.args[0]
+    assert result is reservation
+    assert any(
+        "Reservation.establishment" in str(option.path)
+        for option in statement._with_options
+    )

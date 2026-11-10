@@ -1185,7 +1185,9 @@ async def _find_idempotent(
     session: AsyncSession, user_id: UUID, key: str
 ) -> Reservation | None:
     result = await session.execute(
-        select(Reservation).where(
+        select(Reservation)
+        .options(selectinload(Reservation.establishment))
+        .where(
             Reservation.user_id == user_id,
             Reservation.idempotency_key == key,
         )
@@ -1677,8 +1679,10 @@ async def create_client_reservation(
         # 8. Valider la transaction
         await session.commit()
 
-        # 9. Recharger les données persistées
+        # Recharger les valeurs persistées et conserver la relation attendue
+        # par le schéma de réponse sans déclencher de chargement paresseux.
         await session.refresh(reservation)
+        reservation.establishment = establishment
         
         # Email envoyé uniquement après la validation de la transaction.
         _send_reservation_email(
