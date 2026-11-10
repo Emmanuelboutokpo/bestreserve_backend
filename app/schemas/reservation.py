@@ -30,6 +30,7 @@ class ReservationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     establishment_id: UUID
+    payment_condition_id: UUID | None = None
 
     # Hébergement : date d'arrivée et de départ.
     # Restaurant / loisirs : date de réservation.
@@ -262,6 +263,7 @@ class ReservationPublic(BaseModel):
     payment_method: PaymentMethod | None
     payment_status: PaymentStatus
     status: ReservationStatus
+    payment_condition: dict[str, Any] | None = None
 
     cancelled_at: datetime | None
     cancellation_reason: str | None
@@ -450,6 +452,8 @@ class ReservationQuote(BaseModel):
     commission_amount: Decimal
     partner_amount: Decimal
     currency: str
+    payment_conditions: list[dict[str, Any]] = Field(default_factory=list)
+    selected_payment_condition: dict[str, Any] | None = None
 
 # =========================================================
 # STATISTIQUES ADMINISTRATEUR

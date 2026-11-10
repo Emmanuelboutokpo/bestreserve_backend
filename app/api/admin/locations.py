@@ -20,7 +20,7 @@ from app.services.location import location_service as service
 
 
 admin_locations_router = APIRouter(
-    prefix="/locations",
+    prefix="/admin/locations",
     tags=["Administration géographique"],
     dependencies=[Depends(require_admin)],
 )

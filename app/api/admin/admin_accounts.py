@@ -46,7 +46,6 @@ async def admin_delete_user(
 ):
     return await account_service.admin_delete_account(
         user_id=user_id,
-        data=data,
         session=session,
     )
 
@@ -59,7 +58,7 @@ async def admin_change_user_password(
 ):
     return await account_service.admin_change_password(
         user_id=user_id,
-        data=data,
+        new_password=data.new_password,
         session=session,
     )
 

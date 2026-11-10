@@ -17,6 +17,7 @@ from app.helpers.cloudinary import (
 
 from app.models import (
     ActivityLog,
+    Establishment,
     Favorite,
     Notification,
     Profile,
@@ -25,7 +26,7 @@ from app.models import (
 )
 
 from app.models.base import utc_now
-from app.models.enums import UserProvider
+from app.models.enums import UserProvider, UserRole
 from app.schemas.account import (
     AccountDeleteRequest,
     AccountProfilePatch,
@@ -411,11 +412,28 @@ class AccountService:
         user_id: UUID,
         session: AsyncSession,
         allow_admin: bool = False,
+        owner_id: UUID | None = None,
     ):
-        result = await session.execute(
+        statement = (
             select(User)
             .options(selectinload(User.profile))
             .where(User.id == user_id)
+        )
+        if owner_id is not None:
+            statement = statement.where(
+                User.role == UserRole.CLIENT,
+                User.id.in_(
+                    select(Reservation.user_id)
+                    .join(
+                        Establishment,
+                        Establishment.id == Reservation.establishment_id,
+                    )
+                    .where(Establishment.owner_id == owner_id)
+                    .distinct()
+                )
+            )
+        result = await session.execute(
+            statement
         )
 
         user = result.scalars().first()
@@ -442,10 +460,15 @@ class AccountService:
         user_id: UUID,
         data: AccountProfilePatch,
         session: AsyncSession,
+        owner_id: UUID | None = None,
     ) -> User:
         """L'administrateur modifie le profil d'un client."""
 
-        user = await self._get_managed_user(user_id, session)
+        user = await self._get_managed_user(
+            user_id,
+            session,
+            owner_id=owner_id,
+        )
 
         profile = self._profile_or_create(user, session)
 
@@ -462,10 +485,15 @@ class AccountService:
         user_id: UUID,
         new_password: str,
         session: AsyncSession,
+        owner_id: UUID | None = None,
     ) -> dict:
         """L'administrateur réinitialise le mot de passe d'un client."""
 
-        user = await self._get_managed_user(user_id, session)
+        user = await self._get_managed_user(
+            user_id,
+            session,
+            owner_id=owner_id,
+        )
 
         user.password = generate_password_hash(new_password)
 
@@ -487,11 +515,13 @@ class AccountService:
         user_id: UUID,
         avatar: UploadFile,
         session: AsyncSession,
+        owner_id: UUID | None = None,
     ):
         user = await self._get_managed_user(
             user_id,
             session,
-            allow_admin=True
+            allow_admin=True,
+            owner_id=owner_id,
         )
 
         return await self.upload_avatar(user, avatar, session)
@@ -501,11 +531,13 @@ class AccountService:
         self,
         user_id: UUID,
         session: AsyncSession,
+        owner_id: UUID | None = None,
     ):
         user = await self._get_managed_user(
             user_id,
             session,
-            allow_admin=True
+            allow_admin=True,
+            owner_id=owner_id,
         )
 
         return await self.delete_avatar(user, session)
@@ -514,6 +546,7 @@ class AccountService:
         self,
         user_id: UUID,
         session: AsyncSession,
+        owner_id: UUID | None = None,
     ) -> dict:
         """
         Désactive et anonymise un compte client.
@@ -521,7 +554,11 @@ class AccountService:
         Les réservations et les transactions historiques sont conservées.
         """
 
-        user = await self._get_managed_user(user_id, session)
+        user = await self._get_managed_user(
+            user_id,
+            session,
+            owner_id=owner_id,
+        )
 
         deleted_email = f"deleted-{user.id}@deleted.invalid"
 

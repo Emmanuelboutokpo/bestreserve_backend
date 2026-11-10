@@ -11,7 +11,6 @@ from app.schemas.payment_condition import (
     PaymentConditionCreate,
     PaymentConditionUpdate,
     PaymentConditionPublic,
-    EstablishmentPaymentConditionsUpdate,
 )
 
 from app.services import payment_condition as payment_condition_service
@@ -99,41 +98,5 @@ async def delete_payment_condition(
 ):
     return await payment_condition_service.delete_payment_condition(
         condition_id,
-        session,
-    )
-
-
-# =========================================================
-# ASSOCIATION AUX ÉTABLISSEMENTS
-# =========================================================
-
-@admin_payment_conditions_router.put(
-    "/establishments/{establishment_id}/payment-conditions",
-    response_model=list[PaymentConditionPublic],
-    summary="Remplacer les conditions d'un établissement",
-)
-async def set_establishment_payment_conditions(
-    establishment_id: UUID,
-    data: EstablishmentPaymentConditionsUpdate,
-    session: Annotated[AsyncSession, Depends(get_session)],
-):
-    return await payment_condition_service.set_establishment_payment_conditions(
-        establishment_id,
-        data.payment_condition_ids,
-        session,
-    )
-
-
-@admin_payment_conditions_router.get(
-    "/establishments/{establishment_id}/payment-conditions",
-    response_model=list[PaymentConditionPublic],
-    summary="Consulter les conditions d'un établissement",
-)
-async def get_establishment_payment_conditions(
-    establishment_id: UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-):
-    return await payment_condition_service.get_establishment_payment_conditions(
-        establishment_id,
         session,
     )

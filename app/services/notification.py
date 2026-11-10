@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models.notification import Notification
-from app.models.enums import NotificationType
-from app.models import User
+from app.models.enums import NotificationType, UserRole
+from app.models import Establishment, Reservation, User
 
 from datetime import datetime, timezone
 from typing import Any
@@ -263,6 +263,7 @@ async def create_admin_notification(
     message: str,
     action_url: str | None,
     session: AsyncSession,
+    owner_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Crée une notification pour un utilisateur."""
 
@@ -276,9 +277,23 @@ async def create_admin_notification(
             detail="Le titre et le message sont obligatoires.",
         )
 
-    user_result = await session.execute(
-        select(User.id).where(User.id == user_id)
+    recipient_query = select(User.id).where(
+        User.id == user_id,
+        User.role == UserRole.CLIENT,
     )
+    if owner_id is not None:
+        recipient_query = recipient_query.where(
+            User.id.in_(
+                select(Reservation.user_id)
+                .join(
+                    Establishment,
+                    Establishment.id == Reservation.establishment_id,
+                )
+                .where(Establishment.owner_id == owner_id)
+                .distinct()
+            )
+        )
+    user_result = await session.execute(recipient_query)
 
     if user_result.scalar_one_or_none() is None:
         raise HTTPException(

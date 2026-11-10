@@ -1,14 +1,19 @@
 
 from __future__ import annotations
 
+import time
+from uuid import uuid4
+
 import cloudinary
 from cloudinary import uploader
+from cloudinary.utils import private_download_url
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 
 
 AVATAR_FOLDER = "bestreserv/avatars"
+OWNER_DOCUMENT_FOLDER = "bestreserv/owner-documents"
 
 
 def configure_cloudinary() -> None:
@@ -107,3 +112,45 @@ async def destroy_image(
         raise RuntimeError(
             f"Échec de suppression Cloudinary : {result}"
         )
+
+
+async def upload_owner_document(contents: bytes) -> dict:
+    configure_cloudinary()
+    public_id = uuid4().hex
+    return await run_in_threadpool(
+        uploader.upload,
+        contents,
+        folder=OWNER_DOCUMENT_FOLDER,
+        public_id=public_id,
+        resource_type="raw",
+        type="authenticated",
+        overwrite=False,
+        use_filename=False,
+    )
+
+
+async def destroy_owner_document(public_id: str) -> None:
+    configure_cloudinary()
+    result = await run_in_threadpool(
+        uploader.destroy,
+        public_id,
+        resource_type="raw",
+        type="authenticated",
+    )
+    if result.get("result") not in ("ok", "not found"):
+        raise RuntimeError(
+            f"Échec de suppression du document Cloudinary : {result}"
+        )
+
+
+def owner_document_download_url(public_id: str, filename: str) -> str:
+    configure_cloudinary()
+    extension = filename.rsplit(".", 1)[-1].lower()
+    return private_download_url(
+        public_id,
+        extension,
+        resource_type="raw",
+        type="authenticated",
+        attachment=True,
+        expires_at=int(time.time()) + 600,
+    )

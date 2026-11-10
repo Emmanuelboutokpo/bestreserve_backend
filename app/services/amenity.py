@@ -43,10 +43,15 @@ class AmenityService:
         session: AsyncSession,
         *,
         for_update: bool = False,
+        owner_id: UUID | None = None,
     ) -> Establishment:
         statement = select(Establishment).where(
             Establishment.id == establishment_id
         )
+        if owner_id is not None:
+            statement = statement.where(
+                Establishment.owner_id == owner_id
+            )
 
         if for_update:
             statement = statement.with_for_update()
@@ -255,11 +260,14 @@ class AmenityService:
         request: Request,
         actor: User,
         session: AsyncSession,
+        *,
+        owner_id: UUID | None = None,
     ) -> dict:
         establishment = await cls.get_establishment(
             establishment_id,
             session,
             for_update=True,
+            owner_id=owner_id,
         )
 
         requested_ids = set(data.amenity_ids)
@@ -343,11 +351,14 @@ class AmenityService:
         request: Request,
         actor: User,
         session: AsyncSession,
+        *,
+        owner_id: UUID | None = None,
     ) -> dict:
         establishment = await cls.get_establishment(
             establishment_id,
             session,
             for_update=True,
+            owner_id=owner_id,
         )
 
         result = await session.execute(

@@ -11,6 +11,7 @@ from app.models.establishment_payment_condition import (
 from app.models.favorite import Favorite
 from app.models.location import Location
 from app.models.notification import Notification
+from app.models.owners import OwnerApplication
 from app.models.payment_condition import PaymentCondition
 from app.models.photo import Photo
 from app.models.platform_setting import PlatformSetting
@@ -32,6 +33,7 @@ __all__ = [
     "Favorite",
     "Location",
     "Notification",
+    "OwnerApplication",
     "PaymentCondition",
     "Photo",
     "PlatformSetting",

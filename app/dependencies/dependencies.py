@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.enums import UserRole, UserStatus
 from app.cores.redis import token_in_blacklist
 from app.cores.db import get_session
+from app.services.owners import owner_application_service
 
 class TokenBearer(HTTPBearer):
     def __init__(self, auto_error: bool = True):
@@ -68,6 +69,10 @@ class TokenBearer(HTTPBearer):
         if (
             not user
             or user.status != UserStatus.ACTIF
+            or (
+                user.role == UserRole.PROPRIETAIRE
+                and not user.email_verified
+            )
             or user.token_version != token_data.get("ver", 0)
             or role != token_data.get("role")
         ):
@@ -148,6 +153,35 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cette action est réservée aux administrateurs.",
+        )
+    return current_user
+
+
+def require_owner_account(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if (
+        current_user.role != UserRole.PROPRIETAIRE
+        or not current_user.email_verified
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cette action est réservée aux propriétaires.",
+        )
+    return current_user
+
+
+async def require_proprietaire(
+    current_user: User = Depends(require_owner_account),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    if not await owner_application_service.is_approved(
+        current_user.id,
+        session,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Votre dossier propriétaire doit être approuvé.",
         )
     return current_user
 

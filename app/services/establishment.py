@@ -18,6 +18,7 @@ from app.models import (
     EstablishmentAmenity,
     EstablishmentPaymentCondition,
     Location,
+    Photo,
     Reservation,
     Review,
     SubCategory,
@@ -986,10 +987,13 @@ class EstablishmentService:
         db: AsyncSession,
         *,
         for_update: bool = False,
+        owner_id: Optional[UUID] = None,
     ) -> Establishment:
         query = self._detail_query(include_all_statuses=True).where(
             Establishment.id == establishment_id
         )
+        if owner_id is not None:
+            query = query.where(Establishment.owner_id == owner_id)
 
         if for_update:
             query = query.with_for_update()
@@ -1005,6 +1009,33 @@ class EstablishmentService:
 
         return establishment
 
+    async def _get_admin_photo(
+        self,
+        photo_id: UUID,
+        db: AsyncSession,
+        *,
+        owner_id: Optional[UUID] = None,
+    ) -> Photo:
+        query = (
+            select(Photo)
+            .join(
+                Establishment,
+                Establishment.id == Photo.establishment_id,
+            )
+            .where(Photo.id == photo_id)
+        )
+        if owner_id is not None:
+            query = query.where(Establishment.owner_id == owner_id)
+
+        result = await db.execute(query)
+        photo = result.scalars().first()
+        if photo is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Photo introuvable.",
+            )
+        return photo
+
     async def list_admin_establishments(
         self,
         db: AsyncSession,
@@ -1015,8 +1046,11 @@ class EstablishmentService:
         sort: str = "newest",
         limit: int = 20,
         offset: int = 0,
+        owner_id: Optional[UUID] = None,
     ) -> dict[str, Any]:
         query = self._list_query(include_all_statuses=True)
+        if owner_id is not None:
+            query = query.where(Establishment.owner_id == owner_id)
 
         if q:
             query = query.where(
@@ -1055,15 +1089,15 @@ class EstablishmentService:
         count_result = await db.execute(count_query)
         total = count_result.scalar_one()
 
-        result = await db.execute(
-            query.offset(offset).limit(limit)
-        )
+        result = await db.execute(query.offset(offset).limit(limit))
+        establishments = result.scalars().unique().all()
+        items = [self.serialize_list_item(item) for item in establishments]
+        if owner_id is not None:
+            for item, establishment in zip(items, establishments):
+                item["status"] = establishment.status
 
         return {
-            "items": [
-                self.serialize_list_item(item)
-                for item in result.scalars().unique().all()
-            ],
+            "items": items,
             "total": total,
             "limit": limit,
             "offset": offset,
@@ -1177,6 +1211,8 @@ class EstablishmentService:
         db: AsyncSession,
         actor: User,
         request: Request,
+        *,
+        owner_id: Optional[UUID] = None,
     ) -> dict[str, str]:
         """
         Supprime physiquement un établissement uniquement
@@ -1188,6 +1224,7 @@ class EstablishmentService:
             establishment_id,
             db,
             for_update=True,
+            owner_id=owner_id,
         )
 
         # 1. Vérifier les réservations

@@ -13,7 +13,6 @@ from app.dependencies.dependencies import require_admin
 from app.models import (
     ActivityLog,
     Amenity,
-    Establishment,
     EstablishmentAmenity,
     User,
 )
@@ -23,7 +22,6 @@ from app.schemas.amenity import (
     AmenityPage,
     AmenityPatch,
     AmenityPublic,
-    EstablishmentAmenityRequest,
 )
 
 
@@ -34,13 +32,6 @@ admin_amenities_router = APIRouter(
     tags=["Administration des équipements"],
     dependencies=[Depends(require_admin)],
 )
-
-admin_establishment_amenities_router = APIRouter(
-    prefix="/admin/establishments",
-    tags=["Équipements des établissements"],
-    dependencies=[Depends(require_admin)],
-)
-
 
 async def _get_amenity(amenity_id: UUID, session: AsyncSession) -> Amenity:
     result = await session.execute(
@@ -56,28 +47,6 @@ async def _get_amenity(amenity_id: UUID, session: AsyncSession) -> Amenity:
             detail="Équipement introuvable.",
         )
     return amenity
-
-
-async def _get_establishment(
-    establishment_id: UUID,
-    session: AsyncSession,
-    *,
-    for_update: bool = False,
-) -> Establishment:
-    statement = select(Establishment).where(
-        Establishment.id == establishment_id,
-        Establishment.id.isnot(None),
-    )
-    if for_update:
-        statement = statement.with_for_update()
-    result = await session.execute(statement)
-    establishment = result.scalars().first()
-    if not establishment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Établissement introuvable.",
-        )
-    return establishment
 
 
 def _audit(
@@ -228,109 +197,3 @@ async def delete_amenity(
         ) from exc
 
     return {"message": "Équipement supprimé."}
-
-@admin_establishment_amenities_router.post("/{establishment_id}/amenities")
-async def add_establishment_amenities(
-    establishment_id: UUID,
-    data: EstablishmentAmenityRequest,
-    request: Request,
-    actor: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    establishment = await _get_establishment(
-        establishment_id,
-        session,
-        for_update=True,
-    )
-    amenity_result = await session.execute(
-        select(Amenity.id).where(
-            Amenity.id.in_(data.amenity_ids),
-            Amenity.id.isnot(None),
-        )
-    )
-    active_ids = set(amenity_result.scalars().all())
-    missing_ids = set(data.amenity_ids) - active_ids
-    if missing_ids:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Un ou plusieurs équipements n'existent pas ou sont supprimés.",
-        )
-
-    existing_result = await session.execute(
-        select(EstablishmentAmenity.amenity_id).where(
-            EstablishmentAmenity.establishment_id == establishment.id,
-            EstablishmentAmenity.amenity_id.in_(data.amenity_ids),
-        )
-    )
-    existing_ids = set(existing_result.scalars().all())
-    new_ids = active_ids - existing_ids
-    for amenity_id in new_ids:
-        session.add(
-            EstablishmentAmenity(
-                establishment_id=establishment.id,
-                amenity_id=amenity_id,
-            )
-        )
-    _audit(
-        session,
-        actor,
-        "ADMIN_ESTABLISHMENT_AMENITIES_UPDATED",
-        request,
-        establishment_id=establishment.id,
-        metadata={
-            "added_ids": [str(item) for item in sorted(new_ids)],
-            "requested_count": len(data.amenity_ids),
-        },
-    )
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Les équipements ont changé pendant cette requête; recommencez.",
-        ) from exc
-    return {
-        "added_count": len(new_ids),
-        "already_attached_count": len(existing_ids),
-    }
-
-
-@admin_establishment_amenities_router.delete(
-    "/{establishment_id}/amenities/{amenity_id}"
-)
-async def remove_establishment_amenity(
-    establishment_id: UUID,
-    amenity_id: UUID,
-    request: Request,
-    actor: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    establishment = await _get_establishment(
-        establishment_id,
-        session,
-        for_update=True,
-    )
-    result = await session.execute(
-        select(EstablishmentAmenity).where(
-            EstablishmentAmenity.establishment_id == establishment.id,
-            EstablishmentAmenity.amenity_id == amenity_id,
-        )
-    )
-    link = result.scalars().first()
-    if not link:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Cet équipement n'est pas associé à l'établissement.",
-        )
-    await session.delete(link)
-    _audit(
-        session,
-        actor,
-        "ADMIN_ESTABLISHMENT_AMENITY_REMOVED",
-        request,
-        establishment_id=establishment.id,
-        metadata={"amenity_id": str(amenity_id)},
-    )
-    await session.commit()
-    return {"message": "Équipement retiré de l'établissement."}

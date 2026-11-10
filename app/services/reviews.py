@@ -45,8 +45,17 @@ async def _get_review(
     session: AsyncSession,
     *,
     for_update: bool = False,
+    owner_id: UUID | None = None,
 ) -> Review:
     query = _review_query().where(Review.id == review_id)
+    if owner_id is not None:
+        query = query.where(
+            Review.establishment_id.in_(
+                select(Establishment.id).where(
+                    Establishment.owner_id == owner_id
+                )
+            )
+        )
 
     if for_update:
         query = query.with_for_update()
@@ -334,6 +343,7 @@ async def list_admin_reviews(
     approved: bool | None,
     establishment_id: UUID | None,
     session: AsyncSession,
+    owner_id: UUID | None = None,
 ) -> ReviewPage:
     """Liste les avis pour l'administration avec pagination."""
 
@@ -347,6 +357,13 @@ async def list_admin_reviews(
     if establishment_id is not None:
         query = query.where(
             Review.establishment_id == establishment_id
+        )
+    if owner_id is not None:
+        owner_establishment_ids = select(Establishment.id).where(
+            Establishment.owner_id == owner_id
+        )
+        query = query.where(
+            Review.establishment_id.in_(owner_establishment_ids)
         )
 
     # Compter les avis correspondant aux filtres.
@@ -363,6 +380,14 @@ async def list_admin_reviews(
     if establishment_id is not None:
         count_query = count_query.where(
             Review.establishment_id == establishment_id
+        )
+    if owner_id is not None:
+        count_query = count_query.where(
+            Review.establishment_id.in_(
+                select(Establishment.id).where(
+                    Establishment.owner_id == owner_id
+                )
+            )
         )
 
     total = await session.scalar(count_query)
@@ -409,22 +434,14 @@ async def approve_review(
     *,
     review_id: UUID,
     session: AsyncSession,
+    owner_id: UUID | None = None,
 ) -> ReviewAdminPublic:
-    result = await session.execute(
-        select(Review)
-        .options(
-            selectinload(Review.user).selectinload(User.profile)
-        )
-        .where(Review.id == review_id)
+    review = await _get_review(
+        review_id,
+        session,
+        for_update=True,
+        owner_id=owner_id,
     )
-
-    review = result.scalar_one_or_none()
-
-    if review is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Avis introuvable.",
-        )
 
     review.is_approved = True
     review.approved_at = datetime.now(timezone.utc)
@@ -452,12 +469,14 @@ async def approve_review(
 async def delete_admin_review(
     review_id: UUID,
     session: AsyncSession,
+    owner_id: UUID | None = None,
 ) -> None:
 
     review = await _get_review(
         review_id,
         session,
         for_update=True,
+        owner_id=owner_id,
     )
 
     await session.delete(review)

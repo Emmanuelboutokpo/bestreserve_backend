@@ -403,6 +403,12 @@ class Reservation(UUIDMixin, TimestampMixin, table=True):
         back_populates="reservation",
     )
 
+    @property
+    def payment_condition(self) -> dict[str, Any] | None:
+        snapshot = self.pricing_snapshot or {}
+        condition = snapshot.get("payment_condition")
+        return condition if isinstance(condition, dict) else None
+
     # ============================================================
     # MÉTHODES
     # ============================================================

@@ -21,7 +21,9 @@ from app.models import (
     ActivityLog,
     Category,
     Establishment,
+    EstablishmentPaymentCondition,
     Location,
+    PaymentCondition,
     PlatformSetting,
     Reservation,
     SubCategory,
@@ -32,6 +34,8 @@ from app.models.enums import (
     AvailabilityStatus,
     EstablishmentStatus,
     PaymentStatus,
+    PaymentConditionType,
+    PaymentMethod,
     ReservationStatus,
     TransactionType,
 )
@@ -956,6 +960,112 @@ async def reservation_quote(
     establishment = await get_bookable_establishment(
         data.establishment_id, session, for_update=for_update
     )
+    payment_conditions_result = await session.execute(
+        select(PaymentCondition)
+        .join(
+            EstablishmentPaymentCondition,
+            EstablishmentPaymentCondition.payment_condition_id
+            == PaymentCondition.id,
+        )
+        .where(
+            EstablishmentPaymentCondition.establishment_id
+            == establishment.id
+        )
+        .order_by(PaymentCondition.name.asc(), PaymentCondition.id)
+    )
+    payment_conditions = payment_conditions_result.scalars().all()
+    selected_condition = None
+    if data.payment_condition_id is not None:
+        selected_condition = next(
+            (
+                condition
+                for condition in payment_conditions
+                if condition.id == data.payment_condition_id
+            ),
+            None,
+        )
+        if selected_condition is None:
+            raise _http_error(
+                422,
+                "La condition choisie n'est pas disponible pour cet établissement.",
+            )
+    elif len(payment_conditions) == 1:
+        selected_condition = payment_conditions[0]
+    elif len(payment_conditions) > 1:
+        selected_condition = None
+
+    condition_summaries = [
+        {
+            "id": str(condition.id),
+            "name": condition.name,
+            "condition_type": _enum_value(condition.condition_type),
+            "percentage": condition.percentage,
+        }
+        for condition in payment_conditions
+    ]
+    selected_summary = (
+        next(
+            item
+            for item in condition_summaries
+            if item["id"] == str(selected_condition.id)
+        )
+        if selected_condition is not None
+        else None
+    )
+
+    if selected_condition is not None:
+        condition_type = selected_condition.condition_type
+        if (
+            condition_type == PaymentConditionType.ACOMPTE
+            and selected_condition.percentage is None
+        ):
+            raise _http_error(
+                409,
+                "La condition d'acompte de cet établissement n'a pas de pourcentage valide.",
+            )
+        if (
+            condition_type != PaymentConditionType.ACOMPTE
+            and selected_condition.percentage is not None
+        ):
+            raise _http_error(
+                409,
+                "La condition de paiement de cet établissement est mal configurée.",
+            )
+        if (
+            condition_type == PaymentConditionType.SUR_PLACE
+            and data.payment_method not in (None, PaymentMethod.SUR_PLACE)
+        ):
+            raise _http_error(
+                422,
+                "Cette condition exige un paiement sur place.",
+            )
+        if (
+            condition_type != PaymentConditionType.SUR_PLACE
+            and data.payment_method == PaymentMethod.SUR_PLACE
+        ):
+            raise _http_error(
+                422,
+                "Le paiement sur place n'est pas disponible avec cette condition.",
+            )
+    elif not payment_conditions:
+        selected_summary = {
+            "id": None,
+            "name": (
+                "Paiement sur place"
+                if data.payment_method == PaymentMethod.SUR_PLACE
+                else "Paiement intégral"
+            ),
+            "condition_type": (
+                PaymentConditionType.SUR_PLACE.value
+                if data.payment_method == PaymentMethod.SUR_PLACE
+                else PaymentConditionType.PAIEMENT_INTEGRAL.value
+            ),
+            "percentage": None,
+        }
+
+    if len(payment_conditions) > 1 and data.payment_condition_id is None:
+        selected_summary = None
+
     kind, _ = _validate_booking_period(
         establishment,
         data.start_date,
@@ -980,6 +1090,8 @@ async def reservation_quote(
     end_time=getattr(data, "end_time", None),
     options=getattr(data, "options", None),
 ) 
+    quote["payment_conditions"] = condition_summaries
+    quote["selected_payment_condition"] = selected_summary
     
     await check_capacity(
         establishment,
@@ -1029,13 +1141,25 @@ async def get_client_reservation(
 
 
 async def get_admin_reservation(
-    reservation_id: UUID, session: AsyncSession, *, for_update: bool = False
+    reservation_id: UUID,
+    session: AsyncSession,
+    *,
+    for_update: bool = False,
+    owner_id: UUID | None = None,
 ) -> Reservation:
     stmt = (
-    select(Reservation)
-    .options(selectinload(Reservation.establishment))
-    .where(Reservation.id == reservation_id)
-)
+        select(Reservation)
+        .options(selectinload(Reservation.establishment))
+        .where(Reservation.id == reservation_id)
+    )
+    if owner_id is not None:
+        stmt = stmt.where(
+            Reservation.establishment_id.in_(
+                select(Establishment.id).where(
+                    Establishment.owner_id == owner_id
+                )
+            )
+        )
     if for_update:
         stmt = stmt.with_for_update()
     result = await session.execute(stmt)
@@ -1092,6 +1216,7 @@ def _snapshot(quote: dict, establishment: Establishment) -> dict:
         "currency": quote.get("currency"),
         "establishment_name": getattr(establishment, "name", None),
         "calculated_at": _now_utc().isoformat(),
+        "payment_condition": quote.get("selected_payment_condition"),
     })
     return snapshot
 
@@ -1165,6 +1290,15 @@ def _reservation_values(
         "balance_due": quote["total"],
     }
 
+    payment_condition = quote.get("selected_payment_condition")
+    if payment_condition is not None:
+        values["payment_method"] = (
+            PaymentMethod.SUR_PLACE
+            if payment_condition["condition_type"]
+            == PaymentConditionType.SUR_PLACE.value
+            else getattr(data, "payment_method", None)
+        )
+
     model_fields = _model_fields(Reservation)
 
     filtered_values = {
@@ -1205,7 +1339,16 @@ def _reservation_values(
 # Consultation client / administration
 # ---------------------------------------------------------------------------
 
-def _apply_filters(stmt, *, status_filter=None, establishment_id=None, user_id=None, start_date=None, end_date=None):
+def _apply_filters(
+    stmt,
+    *,
+    status_filter=None,
+    establishment_id=None,
+    user_id=None,
+    start_date=None,
+    end_date=None,
+    owner_id: UUID | None = None,
+):
     if status_filter is not None:
         stmt = stmt.where(Reservation.status == status_filter)
     if establishment_id is not None:
@@ -1216,6 +1359,14 @@ def _apply_filters(stmt, *, status_filter=None, establishment_id=None, user_id=N
         stmt = stmt.where(Reservation.start_date >= start_date)
     if end_date is not None:
         stmt = stmt.where(Reservation.start_date <= end_date)
+    if owner_id is not None:
+        stmt = stmt.where(
+            Reservation.establishment_id.in_(
+                select(Establishment.id).where(
+                    Establishment.owner_id == owner_id
+                )
+            )
+        )
     return stmt
 
 
@@ -1321,6 +1472,7 @@ async def list_admin_reservations(
     start_date: date | None = None,
     end_date: date | None = None,
     search: str | None = None,
+    owner_id: UUID | None = None,
 ):
     # Normalisation de la pagination
     page = max(1, page)
@@ -1343,6 +1495,7 @@ async def list_admin_reservations(
         user_id=user_id,
         start_date=start_date,
         end_date=end_date,
+        owner_id=owner_id,
     )
     # Recherche par référence, email ou téléphone
     if search and search.strip():
@@ -1469,6 +1622,14 @@ async def create_client_reservation(
             quote,
             idempotency_key,
         )
+        if (
+            len(quote.get("payment_conditions", [])) > 1
+            and data.payment_condition_id is None
+        ):
+            raise _http_error(
+                422,
+                "Choisissez une condition de paiement pour cette réservation.",
+            )
 
                 # 6. Créer la réservation
         logger.info("current_user.id = %s", current_user.id)
@@ -1627,8 +1788,14 @@ async def cancel_client_reservation(
 async def update_reservation_status(
     reservation_id: UUID, data: Any, admin_user: User, session: AsyncSession,
     request: Request | None = None, reason: str | None = None,
+    owner_id: UUID | None = None,
 ) -> Reservation:
-    reservation = await get_admin_reservation(reservation_id, session, for_update=True)
+    reservation = await get_admin_reservation(
+        reservation_id,
+        session,
+        for_update=True,
+        owner_id=owner_id,
+    )
     new_status = getattr(data, "status", data)
     reason = reason or getattr(data, "reason", None)
     
@@ -1735,8 +1902,14 @@ async def update_reservation_status(
 async def record_reservation_refund(
     reservation_id: UUID, data: Any, admin_user: User, session: AsyncSession,
     request: Request | None = None,
+    owner_id: UUID | None = None,
 ) -> Reservation:
-    reservation = await get_admin_reservation(reservation_id, session, for_update=True)
+    reservation = await get_admin_reservation(
+        reservation_id,
+        session,
+        for_update=True,
+        owner_id=owner_id,
+    )
     confirmation = getattr(data, "confirmation", None)
     if confirmation != "REFUNDED":
         raise _http_error(422, "La confirmation explicite du remboursement est obligatoire.")
@@ -1802,13 +1975,24 @@ async def record_reservation_refund(
 # ---------------------------------------------------------------------------
 
 async def get_reservation_stats(
-    session: AsyncSession, start_date: date | None = None, end_date: date | None = None,
+    session: AsyncSession,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> dict:
     stmt = select(Reservation)
     if start_date is not None:
         stmt = stmt.where(Reservation.start_date >= start_date)
     if end_date is not None:
         stmt = stmt.where(Reservation.start_date <= end_date)
+    if owner_id is not None:
+        stmt = stmt.where(
+            Reservation.establishment_id.in_(
+                select(Establishment.id).where(
+                    Establishment.owner_id == owner_id
+                )
+            )
+        )
     result = await session.execute(stmt)
     rows = result.scalars().all()
     total = len(rows)

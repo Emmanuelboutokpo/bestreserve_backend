@@ -9,6 +9,7 @@ from app.models.payment_condition import PaymentCondition
 from app.models.establishment_payment_condition import (
     EstablishmentPaymentCondition,
 )
+from app.models.enums import PaymentConditionType
 from app.schemas.payment_condition import (
     PaymentConditionCreate,
     PaymentConditionUpdate,
@@ -19,11 +20,38 @@ from app.schemas.payment_condition import (
 # CONDITIONS DE PAIEMENT : CRUD
 # =========================================================
 
+def _validate_payment_condition(
+    condition_type: PaymentConditionType | None,
+    percentage: int | None,
+) -> None:
+    if condition_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le type de condition de paiement est obligatoire.",
+        )
+    if (
+        condition_type == PaymentConditionType.ACOMPTE
+        and percentage is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Un pourcentage est obligatoire pour une condition d'acompte.",
+        )
+    if (
+        condition_type != PaymentConditionType.ACOMPTE
+        and percentage is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le pourcentage ne s'applique qu'à une condition d'acompte.",
+        )
+
+
 async def create_payment_condition(
     data: PaymentConditionCreate,
     session: AsyncSession,
 ) -> PaymentCondition:
-
+    _validate_payment_condition(data.condition_type, data.percentage)
     condition = PaymentCondition(**data.model_dump())
 
     session.add(condition)
@@ -75,6 +103,10 @@ async def update_payment_condition(
     condition = await get_payment_condition(condition_id, session)
 
     changes = data.model_dump(exclude_unset=True)
+    _validate_payment_condition(
+        changes.get("condition_type", condition.condition_type),
+        changes.get("percentage", condition.percentage),
+    )
 
     for field, value in changes.items():
         setattr(condition, field, value)
@@ -121,19 +153,42 @@ async def delete_payment_condition(
 # CONDITIONS ASSOCIÉES À UN ÉTABLISSEMENT
 # =========================================================
 
-async def get_establishment_payment_conditions(
+async def _get_establishment_for_payment_conditions(
     establishment_id: UUID,
     session: AsyncSession,
-) -> list[PaymentCondition]:
+    *,
+    owner_id: UUID | None = None,
+    for_update: bool = False,
+) -> Establishment:
+    statement = select(Establishment).where(
+        Establishment.id == establishment_id
+    )
+    if owner_id is not None:
+        statement = statement.where(Establishment.owner_id == owner_id)
+    if for_update:
+        statement = statement.with_for_update()
 
-    # Vérifier que l'établissement existe.
-    establishment = await session.get(Establishment, establishment_id)
-
+    result = await session.execute(statement)
+    establishment = result.scalars().first()
     if establishment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Établissement introuvable.",
         )
+    return establishment
+
+
+async def get_establishment_payment_conditions(
+    establishment_id: UUID,
+    session: AsyncSession,
+    *,
+    owner_id: UUID | None = None,
+) -> list[PaymentCondition]:
+    await _get_establishment_for_payment_conditions(
+        establishment_id,
+        session,
+        owner_id=owner_id,
+    )
 
     result = await session.execute(
         select(PaymentCondition)
@@ -156,18 +211,15 @@ async def set_establishment_payment_conditions(
     establishment_id: UUID,
     payment_condition_ids: list[UUID],
     session: AsyncSession,
+    *,
+    owner_id: UUID | None = None,
 ) -> list[PaymentCondition]:
-
-    establishment = await session.get(
-        Establishment,
+    await _get_establishment_for_payment_conditions(
         establishment_id,
+        session,
+        owner_id=owner_id,
+        for_update=True,
     )
-
-    if establishment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Établissement introuvable.",
-        )
 
     # Éviter les doublons dans la liste reçue.
     unique_ids = list(dict.fromkeys(payment_condition_ids))
@@ -221,4 +273,5 @@ async def set_establishment_payment_conditions(
     return await get_establishment_payment_conditions(
         establishment_id,
         session,
+        owner_id=owner_id,
     )

@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
 from uuid import UUID
 
 from pydantic import (
@@ -12,7 +11,12 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.enums import PaymentStatus, ReservationStatus, UserStatus
+from app.models.enums import (
+    EstablishmentStatus,
+    PaymentStatus,
+    ReservationStatus,
+    UserStatus,
+)
 from app.schemas.auth import UserPublic
 
 
@@ -84,12 +88,6 @@ class AdminUserPatch(BaseModel):
         return self
 
 
-class AdminUserRoleUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    role: Literal["CLIENT", "ADMIN"]
-
-
 class AdminUserStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -98,6 +96,34 @@ class AdminUserStatusUpdate(BaseModel):
 
 class AdminUserPage(BaseModel):
     items: list[UserPublic]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserOwnerPublic(BaseModel):
+    id: UUID
+    email: EmailStr
+    firstName: str | None = None
+    lastName: str | None = None
+
+
+class AdminUserEstablishmentPublic(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    status: EstablishmentStatus
+
+
+class AdminUserAdminPublic(UserPublic):
+    establishments: list[AdminUserEstablishmentPublic] = Field(
+        default_factory=list
+    )
+    owners: list[AdminUserOwnerPublic] = Field(default_factory=list)
+
+
+class AdminUserAdminPage(BaseModel):
+    items: list[AdminUserAdminPublic]
     total: int
     limit: int
     offset: int

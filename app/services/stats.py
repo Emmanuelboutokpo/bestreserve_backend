@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import StringIO
 from typing import Literal, Any
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -101,6 +102,26 @@ def _safe_csv_cell(value: Any) -> str:
     return text
 
 
+def _owner_establishment_ids(owner_id: UUID):
+    return select(Establishment.id).where(
+        Establishment.owner_id == owner_id
+    )
+
+
+def _owner_reservation_filter(owner_id: UUID):
+    return Reservation.establishment_id.in_(
+        _owner_establishment_ids(owner_id)
+    )
+
+
+def _owner_user_filter(owner_id: UUID):
+    return User.id.in_(
+        select(Reservation.user_id)
+        .where(_owner_reservation_filter(owner_id))
+        .distinct()
+    )
+
+
 async def _count(session: AsyncSession, model: Any, *filters: Any) -> int:
     statement = select(func.count(model.id))
     if filters:
@@ -109,33 +130,68 @@ async def _count(session: AsyncSession, model: Any, *filters: Any) -> int:
     return int(result.scalar_one())
 
 
-async def get_stats_overview(session: AsyncSession) -> dict:
-    users_result = await session.execute(
-        select(
+async def get_stats_overview(
+    session: AsyncSession,
+    owner_id: UUID | None = None,
+) -> dict:
+    user_query = select(
             func.count(User.id),
             func.sum(case((User.role == UserRole.CLIENT, 1), else_=0)),
             func.sum(case((User.role == UserRole.ADMIN, 1), else_=0)),
         )
-    )
+    if owner_id is not None:
+        user_query = user_query.where(
+            _owner_user_filter(owner_id),
+            User.role == UserRole.CLIENT,
+        )
+    users_result = await session.execute(user_query)
     total_users, clients, admins = users_result.one()
 
-    users_active = await _count(
-        session, User, User.status == UserStatus.ACTIF
+    user_filters = (
+        (_owner_user_filter(owner_id), User.role == UserRole.CLIENT)
+        if owner_id is not None
+        else ()
     )
-    establishments_total = await _count(session, Establishment)
+    users_active = await _count(
+        session,
+        User,
+        *user_filters,
+        User.status == UserStatus.ACTIF,
+    )
+    establishment_filters = (
+        (Establishment.owner_id == owner_id,)
+        if owner_id is not None
+        else ()
+    )
+    establishments_total = await _count(
+        session,
+        Establishment,
+        *establishment_filters,
+    )
     establishments_published = await _count(
         session,
         Establishment,
+        *establishment_filters,
         Establishment.status == EstablishmentStatus.PUBLIE,
     )
-    reservation_total = await _count(session, Reservation)
+    reservation_filters = (
+        (_owner_reservation_filter(owner_id),)
+        if owner_id is not None
+        else ()
+    )
+    reservation_total = await _count(
+        session,
+        Reservation,
+        *reservation_filters,
+    )
     pending_reservations = await _count(
         session,
         Reservation,
+        *reservation_filters,
         Reservation.status == ReservationStatus.EN_ATTENTE,
     )
 
-    payments_result = await session.execute(
+    payments_query = (
         select(
             Transaction.currency,
             func.coalesce(
@@ -152,13 +208,21 @@ async def get_stats_overview(session: AsyncSession) -> dict:
             ),
             func.count(Transaction.id),
         )
+        .select_from(Transaction)
         .where(
             Transaction.type == TransactionType.PAYMENT,
             Transaction.status == PaymentStatus.PAYE,
         )
-        .group_by(Transaction.currency)
-        .order_by(Transaction.currency)
     )
+    if owner_id is not None:
+        payments_query = payments_query.join(
+            Reservation,
+            Reservation.id == Transaction.reservation_id,
+        ).where(_owner_reservation_filter(owner_id))
+    payments_query = payments_query.group_by(
+        Transaction.currency
+    ).order_by(Transaction.currency)
+    payments_result = await session.execute(payments_query)
 
     return {
         "users": {
@@ -192,8 +256,15 @@ async def get_stats_users(
     session: AsyncSession,
     start_date: date | None = None,
     end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> dict:
     start, end = _date_bounds(start_date, end_date)
+    filters = _in_period(User.created_at, start, end)
+    if owner_id is not None:
+        filters.extend(
+            [_owner_user_filter(owner_id), User.role == UserRole.CLIENT]
+        )
+    created_after = datetime.now(timezone.utc) - timedelta(days=30)
     result = await session.execute(
         select(
             func.count(User.id),
@@ -203,9 +274,21 @@ async def get_stats_users(
             func.sum(case((User.status == UserStatus.SUSPENDU, 1), else_=0)),
             func.sum(case((User.role == UserRole.CLIENT, 1), else_=0)),
             func.sum(case((User.role == UserRole.ADMIN, 1), else_=0)),
-        ).where(*_in_period(User.created_at, start, end))
+            func.sum(
+                case((User.created_at >= created_after, 1), else_=0)
+            ),
+        ).where(*filters)
     )
-    total, active, inactive, pending, suspended, clients, admins = result.one()
+    (
+        total,
+        active,
+        inactive,
+        pending,
+        suspended,
+        clients,
+        admins,
+        created_last_30_days,
+    ) = result.one()
     return {
         "total": int(total or 0),
         "active": int(active or 0),
@@ -214,6 +297,7 @@ async def get_stats_users(
         "suspended": int(suspended or 0),
         "clients": int(clients or 0),
         "admins": int(admins or 0),
+        "created_last_30_days": int(created_last_30_days or 0),
         "start_date": start_date,
         "end_date": end_date,
     }
@@ -223,8 +307,12 @@ async def get_stats_establishments(
     session: AsyncSession,
     start_date: date | None = None,
     end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> dict:
     start, end = _date_bounds(start_date, end_date)
+    filters = _in_period(Establishment.created_at, start, end)
+    if owner_id is not None:
+        filters.append(Establishment.owner_id == owner_id)
     result = await session.execute(
         select(
             func.count(Establishment.id),
@@ -232,7 +320,7 @@ async def get_stats_establishments(
             func.sum(case((Establishment.status == EstablishmentStatus.EN_ATTENTE, 1), else_=0)),
             func.sum(case((Establishment.status == EstablishmentStatus.REJETE, 1), else_=0)),
             func.sum(case((Establishment.status == EstablishmentStatus.SUSPENDU, 1), else_=0)),
-        ).where(*_in_period(Establishment.created_at, start, end))
+        ).where(*filters)
     )
     total, published, pending, rejected, suspended = result.one()
     return {
@@ -250,8 +338,12 @@ async def get_stats_reservations(
     session: AsyncSession,
     start_date: date | None = None,
     end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> dict:
     start, end = _date_bounds(start_date, end_date)
+    filters = _in_period(Reservation.created_at, start, end)
+    if owner_id is not None:
+        filters.append(_owner_reservation_filter(owner_id))
     result = await session.execute(
         select(
             func.count(Reservation.id),
@@ -261,7 +353,7 @@ async def get_stats_reservations(
             func.sum(case((Reservation.status == ReservationStatus.TERMINEE, 1), else_=0)),
             func.sum(case((Reservation.status == ReservationStatus.ANNULEE, 1), else_=0)),
             func.coalesce(func.sum(Reservation.total), ZERO),
-        ).where(*_in_period(Reservation.created_at, start, end))
+        ).where(*filters)
     )
     total, pending, confirmed, ongoing, completed, cancelled, value = result.one()
     return {
@@ -281,18 +373,30 @@ async def get_stats_revenue(
     session: AsyncSession,
     start_date: date | None = None,
     end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> dict:
     start, end = _date_bounds(start_date, end_date)
-    result = await session.execute(
-        select(
+    query = select(
             Transaction.currency,
             func.count(Transaction.id),
             func.coalesce(func.sum(Transaction.amount), ZERO),
         )
+    if owner_id is not None:
+        query = query.join(
+            Reservation,
+            Reservation.id == Transaction.reservation_id,
+        )
+    filters = [
+        Transaction.type == TransactionType.PAYMENT,
+        Transaction.status == PaymentStatus.PAYE,
+        *_in_period(Transaction.created_at, start, end),
+    ]
+    if owner_id is not None:
+        filters.append(_owner_reservation_filter(owner_id))
+    result = await session.execute(
+        query
         .where(
-            Transaction.type == TransactionType.PAYMENT,
-            Transaction.status == PaymentStatus.PAYE,
-            *_in_period(Transaction.created_at, start, end),
+            *filters,
         )
         .group_by(Transaction.currency)
         .order_by(Transaction.currency)
@@ -312,6 +416,7 @@ async def get_top_destinations(
     start_date: date | None = None,
     end_date: date | None = None,
     limit: int = 10,
+    owner_id: UUID | None = None,
 ) -> list[dict]:
     start, end = _date_bounds(start_date, end_date)
     result = await session.execute(
@@ -326,6 +431,11 @@ async def get_top_destinations(
         .where(
             Location.is_active.is_(True),
             *_in_period(Reservation.created_at, start, end),
+            *(
+                [Establishment.owner_id == owner_id]
+                if owner_id is not None
+                else []
+            ),
         )
         .group_by(Location.id, Location.name, Location.country_code)
         .order_by(func.count(Reservation.id).desc(), Location.id)
@@ -347,6 +457,7 @@ async def get_top_establishments(
     start_date: date | None = None,
     end_date: date | None = None,
     limit: int = 10,
+    owner_id: UUID | None = None,
 ) -> list[dict]:
     start, end = _date_bounds(start_date, end_date)
     result = await session.execute(
@@ -365,7 +476,14 @@ async def get_top_establishments(
             ).label("gross_paid"),
         )
         .join(Reservation, Reservation.establishment_id == Establishment.id)
-        .where(*_in_period(Reservation.created_at, start, end))
+        .where(
+            *_in_period(Reservation.created_at, start, end),
+            *(
+                [Establishment.owner_id == owner_id]
+                if owner_id is not None
+                else []
+            ),
+        )
         .group_by(Establishment.id, Establishment.name)
         .order_by(func.count(Reservation.id).desc(), Establishment.id)
         .limit(limit)
@@ -385,10 +503,13 @@ async def get_recent_activities(
     session: AsyncSession,
     limit: int = 50,
     offset: int = 0,
+    owner_id: UUID | None = None,
 ) -> list[dict]:
+    query = select(ActivityLog)
+    if owner_id is not None:
+        query = query.where(ActivityLog.user_id == owner_id)
     result = await session.execute(
-        select(ActivityLog)
-        .order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+        query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -411,12 +532,21 @@ async def get_reservations_chart(
     start_date: date | None = None,
     end_date: date | None = None,
     period: ChartPeriod = "day",
+    owner_id: UUID | None = None,
 ) -> list[dict]:
     start, end = _date_bounds(start_date, end_date)
     bucket = func.date_trunc(period, Reservation.created_at).label("period")
+    query = select(bucket, func.count(Reservation.id))
+    if owner_id is not None:
+        query = query.join(
+            Establishment,
+            Establishment.id == Reservation.establishment_id,
+        )
+    filters = _in_period(Reservation.created_at, start, end)
+    if owner_id is not None:
+        filters.append(Establishment.owner_id == owner_id)
     result = await session.execute(
-        select(bucket, func.count(Reservation.id))
-        .where(*_in_period(Reservation.created_at, start, end))
+        query.where(*filters)
         .group_by(bucket)
         .order_by(bucket)
         .limit(2000)
@@ -431,12 +561,20 @@ async def get_categories_chart(
     session: AsyncSession,
     start_date: date | None = None,
     end_date: date | None = None,
+    owner_id: UUID | None = None,
 ) -> list[dict]:
     start, end = _date_bounds(start_date, end_date)
     result = await session.execute(
         select(Category.id, Category.name, func.count(Establishment.id))
         .outerjoin(Establishment, Establishment.category_id == Category.id)
-        .where(*_in_period(Establishment.created_at, start, end))
+        .where(
+            *_in_period(Establishment.created_at, start, end),
+            *(
+                [Establishment.owner_id == owner_id]
+                if owner_id is not None
+                else []
+            ),
+        )
         .group_by(Category.id, Category.name)
         .order_by(func.count(Establishment.id).desc(), Category.id)
         .limit(100)
@@ -453,6 +591,7 @@ async def get_revenue_chart(
     end_date: date | None = None,
     period: ChartPeriod = "day",
     currency: str = "XOF",
+    owner_id: UUID | None = None,
 ) -> list[dict]:
     start, end = _date_bounds(start_date, end_date)
     normalized_currency = currency.upper()
@@ -463,14 +602,22 @@ async def get_revenue_chart(
         )
 
     bucket = func.date_trunc(period, Transaction.created_at).label("period")
-    result = await session.execute(
-        select(bucket, func.coalesce(func.sum(Transaction.amount), ZERO))
-        .where(
+    query = select(bucket, func.coalesce(func.sum(Transaction.amount), ZERO))
+    if owner_id is not None:
+        query = query.join(
+            Reservation,
+            Reservation.id == Transaction.reservation_id,
+        )
+    filters = [
             Transaction.type == TransactionType.PAYMENT,
             Transaction.status == PaymentStatus.PAYE,
             Transaction.currency == normalized_currency,
             *_in_period(Transaction.created_at, start, end),
-        )
+    ]
+    if owner_id is not None:
+        filters.append(_owner_reservation_filter(owner_id))
+    result = await session.execute(
+        query.where(*filters)
         .group_by(bucket)
         .order_by(bucket)
         .limit(2000)
@@ -479,4 +626,3 @@ async def get_revenue_chart(
         {"period": point.isoformat(), "revenue": amount}
         for point, amount in result.all()
     ]
-

@@ -48,6 +48,11 @@ class User(UUIDMixin, TimestampMixin, table=True):
         nullable=False,
     )
 
+    email_verified: bool = Field(
+        default=True,
+        nullable=False,
+    )
+
     token_version: int = Field(
         default=0,
         nullable=False,

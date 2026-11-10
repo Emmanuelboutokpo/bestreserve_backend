@@ -97,6 +97,36 @@ async def signup(
         )
 
 
+@auth_router.post(
+    "/auth/signup/proprietaire",
+    status_code=status.HTTP_201_CREATED,
+)
+async def signup_owner(
+    user_data: RegisterRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        new_user = await users.signup_owner(user_data, session)
+        otp = f"{random.randint(100000, 999999)}"
+        await save_otp(new_user.email, otp, expiry=300)
+        send_otp_email(new_user.email, otp)
+        return JSONResponse(
+            content={
+                "message": (
+                    "Compte propriétaire créé. Vérifiez votre adresse email, "
+                    "puis soumettez les documents requis."
+                ),
+                "user_id": str(new_user.id),
+            },
+            status_code=status.HTTP_201_CREATED,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 # ============================================================
 # VERIFY OTP
 # ============================================================
@@ -130,6 +160,7 @@ async def verify_account(
             detail="Utilisateur introuvable.",
         )
 
+    user.email_verified = True
     session.add(user)
 
     await session.commit()

@@ -3,7 +3,7 @@
 import asyncio
 import hmac
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 from uuid import UUID
 from datetime import date, datetime, time, timedelta, timezone
@@ -24,6 +24,7 @@ from app.config import settings
 from app.models.base import utc_now
 from app.models.enums import (
     PaymentMethod,
+    PaymentConditionType,
     PaymentStatus,
     ReservationStatus,
     TransactionType,
@@ -44,6 +45,51 @@ ONLINE_PAYMENT_METHODS = {
     PaymentMethod.MOBILE_MONEY,
     PaymentMethod.CARTE_BANCAIRE,
 }
+
+
+def _checkout_amount(reservation: Reservation) -> Decimal:
+    policy = (reservation.pricing_snapshot or {}).get("payment_condition")
+    condition_type = (
+        policy.get("condition_type")
+        if isinstance(policy, dict)
+        else PaymentConditionType.PAIEMENT_INTEGRAL.value
+    )
+    allowed_condition_types = {condition.value for condition in PaymentConditionType}
+    if condition_type not in allowed_condition_types:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La condition de paiement de cette réservation est invalide.",
+        )
+
+    if (
+        condition_type == PaymentConditionType.SUR_PLACE.value
+        or reservation.payment_method == PaymentMethod.SUR_PLACE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cette réservation doit être payée sur place.",
+        )
+
+    balance_due = money(reservation.balance_due)
+    if condition_type != PaymentConditionType.ACOMPTE.value:
+        return balance_due
+
+    if money(reservation.amount_paid or ZERO) > ZERO:
+        return balance_due
+
+    percentage = policy.get("percentage") if isinstance(policy, dict) else None
+    if not isinstance(percentage, int) or not 1 <= percentage <= 100:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Le pourcentage d'acompte de cette réservation est invalide.",
+        )
+
+    amount = (
+        money(reservation.total) * Decimal(percentage) / Decimal(100)
+    ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if amount <= ZERO:
+        amount = Decimal("1")
+    return min(amount, balance_due)
 
 
 # ============================================================
@@ -183,27 +229,6 @@ async def create_payment(
             detail="Idempotency-Key doit contenir entre 16 et 255 caractères.",
         )
 
-    if not all(
-        (
-            settings.kkiapay_public_key,
-            settings.kkiapay_private_key,
-            settings.kkiapay_secret_key,
-        )
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="KKiaPay n'est pas entièrement configuré.",
-        )
-
-    if payment_method not in ONLINE_PAYMENT_METHODS:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "KKiaPay accepte uniquement les paiements par "
-                "Mobile Money ou carte bancaire."
-            ),
-        )
-
     try:
     
         result = await session.execute(
@@ -220,6 +245,27 @@ async def create_payment(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Réservation introuvable.",
+            )
+
+        if not all(
+            (
+                settings.kkiapay_public_key,
+                settings.kkiapay_private_key,
+                settings.kkiapay_secret_key,
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="KKiaPay n'est pas entièrement configuré.",
+            )
+
+        if payment_method not in ONLINE_PAYMENT_METHODS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "KKiaPay accepte uniquement les paiements par "
+                    "Mobile Money ou carte bancaire."
+                ),
             )
 
         result = await session.execute(
@@ -305,7 +351,7 @@ async def create_payment(
                 detail="Le statut actuel ne permet pas de démarrer un paiement.",
             )
 
-        amount = money(reservation.balance_due)
+        amount = _checkout_amount(reservation)
 
         if amount <= ZERO:
             raise HTTPException(
@@ -789,6 +835,18 @@ def _parse_transaction_type(
         ) from exc
 
 
+def _owner_payment_filter(owner_id: UUID):
+    owner_reservation_ids = (
+        select(Reservation.id)
+        .join(
+            Establishment,
+            Establishment.id == Reservation.establishment_id,
+        )
+        .where(Establishment.owner_id == owner_id)
+    )
+    return Transaction.reservation_id.in_(owner_reservation_ids)
+
+
 def _build_payment_filters(
     *,
     status_filter: str | None = None,
@@ -799,6 +857,7 @@ def _build_payment_filters(
     start_date: date | None = None,
     end_date: date | None = None,
     search: str | None = None,
+    owner_id: UUID | None = None,
 ) -> list:
     """Centralise les filtres communs aux consultations administratives."""
     filters = _build_date_filters(start_date, end_date)
@@ -822,6 +881,9 @@ def _build_payment_filters(
 
     if reservation_id:
         filters.append(Transaction.reservation_id == reservation_id)
+
+    if owner_id is not None:
+        filters.append(_owner_payment_filter(owner_id))
 
     if search:
         term = f"%{search.strip()}%"
@@ -853,6 +915,7 @@ async def list_admin_payments(
     start_date: date | None = None,
     end_date: date | None = None,
     search: str | None = None,
+    owner_id: UUID | None = None,
 ) -> dict[str, Any]:
 
     if page < 1 or not 1 <= page_size <= 100:
@@ -870,6 +933,7 @@ async def list_admin_payments(
         start_date=start_date,
         end_date=end_date,
         search=search,
+        owner_id=owner_id,
     )
 
     # Nombre total de transactions
@@ -925,7 +989,12 @@ async def get_admin_payment(
     *,
     transaction_id: UUID,
     session: AsyncSession,
+    owner_id: UUID | None = None,
 ) -> dict[str, Any]:
+
+    filters = [Transaction.id == transaction_id]
+    if owner_id is not None:
+        filters.append(_owner_payment_filter(owner_id))
 
     result = await session.execute(
         select(
@@ -941,7 +1010,7 @@ async def get_admin_payment(
             Establishment,
             Establishment.id == Reservation.establishment_id,
         )
-        .where(Transaction.id == transaction_id)
+        .where(*filters)
     )
 
     pair = result.first()
@@ -970,6 +1039,7 @@ async def get_admin_payment_stats(
     start_date: date | None = None,
     end_date: date | None = None,
     provider: str | None = None,
+    owner_id: UUID | None = None,
 ) -> dict[str, Any]:
 
     date_filters = _build_date_filters(start_date, end_date)
@@ -983,6 +1053,11 @@ async def get_admin_payment_stats(
         *date_filters,
         Transaction.type == TransactionType.REFUND,
     ]
+
+    if owner_id is not None:
+        owner_filter = _owner_payment_filter(owner_id)
+        payment_filters.append(owner_filter)
+        refund_filters.append(owner_filter)
 
     if provider:
         normalized_provider = provider.strip().upper()

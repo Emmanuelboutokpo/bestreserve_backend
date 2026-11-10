@@ -68,6 +68,12 @@ class ValidationStatus(str, Enum):
     REJETE = "REJETE"
 
 
+class OwnerApplicationStatus(str, Enum):
+    EN_ATTENTE = "EN_ATTENTE"
+    APPROUVE = "APPROUVE"
+    REJETE = "REJETE"
+
+
 class DocumentType(str, Enum):
     REGISTRE = "REGISTRE"
     PIECE_IDENTITE = "PIECE_IDENTITE"
