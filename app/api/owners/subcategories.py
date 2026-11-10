@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.cores.db import get_session
 from app.dependencies.dependencies import require_proprietaire
 from app.models import User
-from app.schemas.subcategory import SubcategoryCreate, SubcategoryPublic
+from app.schemas.subcategory import SubcategoryCreate, SubcategoryPublic, SubcategoryPatch
 from app.services.subcategory import SubcategoryService
 
 owner_subcategories_router = APIRouter(
@@ -37,4 +37,32 @@ async def create_subcategory(
         request,
         session,
         audit_action="OWNER_SUBCATEGORY_CREATED",
+    )
+
+
+@owner_subcategories_router.patch(
+    "/{subcategory_id}",
+    response_model=SubcategoryPublic,
+)
+async def update_subcategory(
+    subcategory_id: UUID,
+    data: SubcategoryPatch,
+    request: Request,
+    actor: User = Depends(require_proprietaire),
+    session: AsyncSession = Depends(get_session),
+):
+    return await subcategory_service.update(
+        subcategory_id, data, actor, request, session
+    )
+
+
+@owner_subcategories_router.delete("/{subcategory_id}")
+async def delete_subcategory(
+    subcategory_id: UUID,
+    request: Request,
+    actor: User = Depends(require_proprietaire),
+    session: AsyncSession = Depends(get_session),
+):
+    return await subcategory_service.delete(
+        subcategory_id, actor, request, session
     )

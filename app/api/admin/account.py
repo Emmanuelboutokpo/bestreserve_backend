@@ -18,7 +18,7 @@ from app.services.account import AccountService
 
 admin_account_router = APIRouter(
     prefix="/accounts",
-    tags=["Partenaires - Comptes utilisateurs"],
+    tags=["Admin - Comptes Administrateurs"],
     dependencies=[Depends(require_admin)],
 )
 
