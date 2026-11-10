@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
+from app.schemas.subcategory import SubcategoryCreate
 from app.services.establishment import establishment_service
 
 
@@ -127,3 +128,45 @@ async def test_setting_establishment_cover_calls_sync_audit_without_awaiting_it(
     }
     assert photo.is_cover is True
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_owner_subcategory_creation_uses_admin_category_and_owner_audit():
+    from app.api.owners import subcategories
+
+    category_id = uuid4()
+    actor = SimpleNamespace(id=uuid4())
+    request = SimpleNamespace(client=None, headers={})
+    session = SimpleNamespace()
+    data = SubcategoryCreate(name="Brunch")
+    expected = SimpleNamespace(
+        id=uuid4(),
+        category_id=category_id,
+        name="Brunch",
+        icon=None,
+        created_at=None,
+    )
+    service_create = AsyncMock(return_value=expected)
+
+    with patch.object(
+        subcategories.subcategory_service,
+        "create",
+        new=service_create,
+    ):
+        response = await subcategories.create_subcategory(
+            category_id,
+            data,
+            request=request,
+            actor=actor,
+            session=session,
+        )
+
+    assert response is expected
+    service_create.assert_awaited_once_with(
+        category_id,
+        data,
+        actor,
+        request,
+        session,
+        audit_action="OWNER_SUBCATEGORY_CREATED",
+    )

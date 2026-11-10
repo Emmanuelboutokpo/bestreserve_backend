@@ -121,6 +121,8 @@ class SubcategoryService:
         actor: User,
         request: Request,
         session: AsyncSession,
+        *,
+        audit_action: str = "ADMIN_SUBCATEGORY_CREATED",
     ) -> SubCategory:
         await category_service.get_or_404(category_id, session, for_update=True)
 
@@ -131,7 +133,13 @@ class SubcategoryService:
         )
         session.add(subcategory)
         await session.flush()
-        self._audit(session, actor, "ADMIN_SUBCATEGORY_CREATED", subcategory, request)
+        self._audit(
+            session,
+            actor,
+            audit_action,
+            subcategory,
+            request,
+        )
         try:
             await session.commit()
         except IntegrityError as exc:

@@ -33,10 +33,13 @@ from app.api.admin.owner_applications import admin_owner_application_router
 from app.api.owners import (
     owner_application_router,
     owner_establishments_router,
+    owner_subcategories_router,
 )
 from app.api.owners.accounts import owner_account_router
+from app.api.admin.account import admin_account_router
 from app.api.owners.amenities import (
     owner_establishment_amenities_router,
+    owner_amenities_router,
 )
 from app.api.owners.establishment_media import establishment_media_router
 from app.api.owners.notifications import owner_notifications_router
@@ -121,12 +124,17 @@ async def maintenance_mode_gate(request, call_next):
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(owner_application_router, prefix="/api/v1")
 app.include_router(owner_establishments_router, prefix="/api/v1")
+app.include_router(owner_subcategories_router, prefix="/api/v1")
 app.include_router(owner_account_router, prefix="/api/v1/owners")
 app.include_router(owner_notifications_router, prefix="/api/v1")
 app.include_router(establishment_media_router, prefix="/api/v1")
 app.include_router(owner_user_router, prefix="/api/v1")
 app.include_router(
     owner_establishment_amenities_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    owner_amenities_router,
     prefix="/api/v1",
 )
 app.include_router(owner_reservations_router, prefix="/api/v1")
@@ -149,7 +157,7 @@ app.include_router(favorites_router, prefix="/api/v1")
 app.include_router(reservations_router)
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(reviews_router)
-
+app.include_router(admin_account_router, prefix="/api/v1")
 app.include_router(admin_owner_application_router, prefix="/api/v1")
 app.include_router(admin_user_router, prefix="/api/v1")
 app.include_router(admin_establishments_router, prefix="/api/v1")

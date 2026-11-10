@@ -26,6 +26,9 @@ def test_owner_can_only_manage_establishment_amenity_links():
     assert "/api/v1/owners/subcategories/{subcategory_id}" not in paths
     assert "/api/v1/owners/locations" not in paths
     assert set(
+        paths["/api/v1/owners/categories/{category_id}/subcategories"]
+    ) == {"post"}
+    assert set(
         paths["/api/v1/owners/establishments/{establishment_id}/amenities"]
     ) == {"post"}
 
