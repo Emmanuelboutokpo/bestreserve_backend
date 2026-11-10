@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -76,3 +76,54 @@ async def test_establishment_detail_is_scoped_to_owner():
     assert "establishments.owner_id" in str(statement)
     assert owner_id in statement.compile().params.values()
     assert error.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_setting_establishment_cover_calls_sync_audit_without_awaiting_it():
+    from app.api.owners import establishment_media
+
+    photo_id = uuid4()
+    establishment_id = uuid4()
+    photo = SimpleNamespace(id=photo_id, establishment_id=establishment_id)
+    establishment = SimpleNamespace(id=establishment_id)
+    result = SimpleNamespace(
+        scalars=lambda: SimpleNamespace(all=lambda: [photo])
+    )
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=result),
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+    )
+    actor = SimpleNamespace(id=uuid4())
+    request = SimpleNamespace(client=None, headers={})
+
+    with (
+        patch.object(
+            establishment_media.establishment_service,
+            "_get_admin_photo",
+            new=AsyncMock(return_value=photo),
+        ),
+        patch.object(
+            establishment_media.establishment_service,
+            "_get_admin_establishment",
+            new=AsyncMock(return_value=establishment),
+        ),
+        patch.object(
+            establishment_media.establishment_service,
+            "_audit",
+            new=Mock(return_value=None),
+        ),
+    ):
+        response = await establishment_media.set_establishment_cover(
+            photo_id,
+            request=request,
+            db=session,
+            actor=actor,
+        )
+
+    assert response == {
+        "message": "Photo de couverture mise à jour.",
+        "photo_id": str(photo_id),
+    }
+    assert photo.is_cover is True
+    session.commit.assert_awaited_once()

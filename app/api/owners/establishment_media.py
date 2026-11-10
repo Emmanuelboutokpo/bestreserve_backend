@@ -212,8 +212,7 @@ async def delete_establishment_photo(
             if replacement:
                 replacement.is_cover = True
 
-        # Correction : transmettre establishment, pas establishment_id.
-        await establishment_service._audit(
+        establishment_service._audit(
             db=db,
             actor=actor,
             action="ESTABLISHMENT_PHOTO_DELETED",
@@ -275,8 +274,7 @@ async def set_establishment_cover(
         for item in photos:
             item.is_cover = item.id == photo.id
 
-        # Correction : transmettre establishment, pas establishment_id.
-        await establishment_service._audit(
+        establishment_service._audit(
             db=db,
             actor=actor,
             action="ESTABLISHMENT_COVER_UPDATED",
