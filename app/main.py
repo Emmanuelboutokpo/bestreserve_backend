@@ -53,6 +53,7 @@ from app.api.owners.reviews import owner_reviews_router
 from app.api.owners.stats import stats_router as owner_stats_router
 from app.api.owners.users import owner_user_router
 from app.api.owners.subcategories import owner_subcategories_router
+from app.api.owners.locations import owner_locations_router
 
 
 origins = [
@@ -144,6 +145,7 @@ app.include_router(owner_stats_router, prefix="/api/v1")
 app.include_router(owner_reviews_router, prefix="/api/v1")
 app.include_router(owner_payments_router, prefix="/api/v1")
 app.include_router(owner_payment_conditions_router, prefix="/api/v1")
+app.include_router(owner_locations_router, prefix="/api/v1")
 
 app.include_router(oauth_router, prefix="/api/v1")
 app.include_router(account_router, prefix="/api/v1")
