@@ -88,3 +88,15 @@ def test_owners_keep_scoped_client_management_and_history_endpoints():
     assert "/api/v1/owners/users/{user_id}/reservations" in paths
     assert "/api/v1/owners/users/{user_id}/favorites" in paths
     assert "/api/v1/owners/users/{user_id}/activity" in paths
+
+
+def test_reservation_creation_requires_an_idempotency_key():
+    parameters = app.openapi()["paths"]["/reservations"]["post"]["parameters"]
+    idempotency_header = next(
+        parameter
+        for parameter in parameters
+        if parameter["name"] == "Idempotency-Key"
+    )
+
+    assert idempotency_header["required"] is True
+    assert idempotency_header["schema"]["minLength"] == 16

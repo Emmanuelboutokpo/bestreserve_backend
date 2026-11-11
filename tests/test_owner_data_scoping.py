@@ -713,3 +713,17 @@ async def test_idempotent_reservation_lookup_eager_loads_establishment():
         "Reservation.establishment" in str(option.path)
         for option in statement._with_options
     )
+
+
+@pytest.mark.anyio
+async def test_create_reservation_rejects_blank_idempotency_key():
+    with pytest.raises(HTTPException) as error:
+        await reservation_service.create_client_reservation(
+            data=SimpleNamespace(establishment_id=uuid4()),
+            current_user=SimpleNamespace(id=uuid4()),
+            session=SimpleNamespace(),
+            request=SimpleNamespace(),
+            idempotency_key=" " * 16,
+        )
+
+    assert error.value.status_code == 422

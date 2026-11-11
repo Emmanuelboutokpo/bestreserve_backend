@@ -115,10 +115,15 @@ async def create_reservation(
     request: Request,
     current_user: Annotated[User, Depends(require_client)],
     session: AsyncSession = Depends(get_session),
-    idempotency_key: str | None = Header(
-        default=None,
+    idempotency_key: str = Header(
+        ...,
         alias="Idempotency-Key",
+        min_length=16,
         max_length=255,
+        description=(
+            "Clé unique à réutiliser pour chaque retry de la même "
+            "tentative de réservation."
+        ),
     ),
 ):
     return await reservation_service.create_client_reservation(

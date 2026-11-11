@@ -1560,7 +1560,7 @@ async def create_client_reservation(
     current_user: User,
     session: AsyncSession,
     request: Request,
-    idempotency_key: str | None = None,
+    idempotency_key: str,
 ) -> Reservation:
  
     if not data.establishment_id:
@@ -1569,40 +1569,33 @@ async def create_client_reservation(
             "L'identifiant de l'établissement est obligatoire.",
         )
 
-    # 2. Valider la clé d'idempotence
-    if idempotency_key is not None:
-        idempotency_key = idempotency_key.strip()
-
-        if not idempotency_key:
-            idempotency_key = None
-
-    if idempotency_key and len(idempotency_key) > 255:
+    idempotency_key = idempotency_key.strip()
+    if not 16 <= len(idempotency_key) <= 255:
         raise _http_error(
             422,
-            "La clé d'idempotence ne doit pas dépasser 255 caractères.",
+            "La clé d'idempotence doit contenir entre 16 et 255 caractères.",
         )
 
     # 3. Vérifier si cette réservation existe déjà
-    if idempotency_key:
-        existing = await _find_idempotent(
-            session,
-            current_user.id,
-            idempotency_key,
-        )
+    existing = await _find_idempotent(
+        session,
+        current_user.id,
+        idempotency_key,
+    )
 
-        if existing:
-            if existing.establishment_id != data.establishment_id:
-                raise _http_error(
-                    409,
-                    (
-                        "Cette clé d'idempotence a déjà été utilisée "
-                        "pour une autre réservation."
-                    ),
+    if existing:
+        if existing.establishment_id != data.establishment_id:
+            raise _http_error(
+                409,
+                (
+                    "Cette clé d'idempotence a déjà été utilisée "
+                    "pour une autre réservation."
                 )
+            )
 
-            # Une nouvelle requête avec la même clé retourne
-            # la réservation existante sans créer de doublon.
-            return existing
+        # Une nouvelle requête avec la même clé retourne
+        # la réservation existante sans créer de doublon.
+        return existing
 
     try:
         # 4. Vérifier l'établissement et calculer le devis.
@@ -1714,24 +1707,23 @@ async def create_client_reservation(
 
         # Vérifier si une requête concurrente a créé
         # la réservation avec la même clé d'idempotence.
-        if idempotency_key:
-            existing = await _find_idempotent(
-                session,
-                current_user.id,
-                idempotency_key,
-            )
+        existing = await _find_idempotent(
+            session,
+            current_user.id,
+            idempotency_key,
+        )
 
-            if existing:
-                if existing.establishment_id != data.establishment_id:
-                    raise _http_error(
-                        409,
-                        (
-                            "Cette clé d'idempotence a déjà été utilisée "
-                            "pour une autre réservation."
-                        ),
+        if existing:
+            if existing.establishment_id != data.establishment_id:
+                raise _http_error(
+                    409,
+                    (
+                        "Cette clé d'idempotence a déjà été utilisée "
+                        "pour une autre réservation."
                     )
+                )
 
-                return existing
+            return existing
 
         # Message temporaire pour faciliter le diagnostic
         raise _http_error(
