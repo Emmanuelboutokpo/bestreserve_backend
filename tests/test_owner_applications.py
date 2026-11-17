@@ -1,12 +1,13 @@
 from io import BytesIO
 from urllib.parse import urlsplit
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
+from app.emails import email as email_service
 from app.helpers.cloudinary import owner_document_download_url
 from app.models import OwnerApplication, Profile, User
 from app.models.enums import OwnerApplicationStatus, UserRole
@@ -23,6 +24,9 @@ class _Scalars:
 
     def first(self):
         return self.value
+
+    def all(self):
+        return self.value if isinstance(self.value, list) else []
 
     def one(self):
         return self.value
@@ -189,6 +193,34 @@ def test_application_response_includes_owner_profile_details():
     assert response.owner.city == "Lagos"
 
 
+def test_admin_notification_email_includes_submission_details(monkeypatch):
+    sent = {}
+
+    def capture_email(*, email, subject, html_body):
+        sent.update(
+            email=email,
+            subject=subject,
+            html_body=html_body,
+        )
+        return {"id": "email-id"}
+
+    monkeypatch.setattr(email_service, "send_email", capture_email)
+
+    response = email_service.send_owner_application_submitted_admin_email(
+        email="admin@example.com",
+        owner_name="<Owner>",
+        owner_email="owner@example.com",
+        application_id="application-id",
+    )
+
+    assert response == {"id": "email-id"}
+    assert sent["email"] == "admin@example.com"
+    assert "à évaluer" in sent["subject"]
+    assert "&lt;Owner&gt;" in sent["html_body"]
+    assert "owner@example.com" in sent["html_body"]
+    assert "application-id" in sent["html_body"]
+
+
 @pytest.mark.anyio
 async def test_rejected_application_can_be_resubmitted_with_corrected_documents(
     monkeypatch,
@@ -206,6 +238,7 @@ async def test_rejected_application_can_be_resubmitted_with_corrected_documents(
     session = _Session(
         [
             _Result(rejected_application),
+            _Result(["admin@example.com"]),
             _Result(),
             _Result(rejected_application),
         ]
@@ -230,6 +263,16 @@ async def test_rejected_application_can_be_resubmitted_with_corrected_documents(
         "app.services.owners.owner_document_download_url",
         lambda public_id, filename: f"https://files.example/{public_id}/{filename}",
     )
+    notify_received = Mock(return_value=True)
+    monkeypatch.setattr(
+        "app.services.owners.notify_owner_application_received",
+        notify_received,
+    )
+    notify_admin = Mock(return_value=True)
+    monkeypatch.setattr(
+        "app.services.owners.notify_admin_owner_application_submitted",
+        notify_admin,
+    )
 
     original_execute = session.execute
     execute_count = 0
@@ -237,7 +280,7 @@ async def test_rejected_application_can_be_resubmitted_with_corrected_documents(
     async def tracked_execute(statement):
         nonlocal execute_count
         execute_count += 1
-        if session.added and execute_count == 4:
+        if session.added and execute_count == 5:
             session.added[0].owner = owner
             return _Result(session.added[0])
         return await original_execute(statement)
@@ -255,6 +298,16 @@ async def test_rejected_application_can_be_resubmitted_with_corrected_documents(
     assert rejected_application.status == OwnerApplicationStatus.REJETE
     assert result.registry_document_url.endswith(
         "owner-documents/new-registry/registry.pdf"
+    )
+    notify_received.assert_called_once_with(
+        recipient=owner.email,
+        name="Propriétaire",
+    )
+    notify_admin.assert_called_once_with(
+        recipient="admin@example.com",
+        owner_name="Propriétaire",
+        owner_email=owner.email,
+        application_id=str(result.id),
     )
 
 
@@ -284,6 +337,11 @@ async def test_admin_can_approve_pending_resubmission(monkeypatch):
         "app.services.owners.owner_document_download_url",
         lambda public_id, filename: f"https://files.example/{public_id}/{filename}",
     )
+    notify_reviewed = Mock(return_value=True)
+    monkeypatch.setattr(
+        "app.services.owners.notify_owner_application_reviewed",
+        notify_reviewed,
+    )
 
     result = await OwnerApplicationService().review(
         corrected_application.id,
@@ -297,6 +355,12 @@ async def test_admin_can_approve_pending_resubmission(monkeypatch):
     assert corrected_application.reviewed_at is not None
     assert corrected_application.rejection_reason is None
     assert rejected_application.status == OwnerApplicationStatus.REJETE
+    notify_reviewed.assert_called_once_with(
+        recipient=owner.email,
+        name="Propriétaire",
+        approved=True,
+        rejection_reason=None,
+    )
 
     approval_session = _Session([_Result(corrected_application.id)])
     assert await OwnerApplicationService().is_approved(

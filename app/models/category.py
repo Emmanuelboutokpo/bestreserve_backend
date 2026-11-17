@@ -32,6 +32,12 @@ class Category(UUIDMixin, TimestampMixin, table=True):
         default=None,
         max_length=100,
     )
+
+    img: Optional[str] = Field(
+        default=None,
+        max_length=2048,
+        nullable=True,
+    )
    
     # ============================================================
     # RELATIONS

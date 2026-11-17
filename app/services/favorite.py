@@ -14,6 +14,8 @@ from app.models import (
     SubCategory,
 )
 from app.models.enums import EstablishmentStatus
+from app.services.establishment import establishment_service
+from app.services.owner_scope import category_type_for_name
 
 
 class FavoriteService:
@@ -43,7 +45,9 @@ class FavoriteService:
                 Location.id == Establishment.location_id,
             )
             .options(
-                selectinload(Favorite.establishment)
+                selectinload(Favorite.establishment).selectinload(
+                    Establishment.category
+                )
             )
             .where(
                 Favorite.user_id == user_id,
@@ -96,6 +100,7 @@ class FavoriteService:
         *,
         limit: int = 20,
         offset: int = 0,
+        location_access: bool = False,
     ) -> dict:
         query = cls._favorite_query(user_id)
 
@@ -136,8 +141,38 @@ class FavoriteService:
             .limit(limit)
         )
 
+        items = []
+        for favorite in result.scalars().all():
+            establishment = favorite.establishment
+            establishment_data = establishment_service._serialize_model(
+                establishment
+            )
+            category_name = (
+                establishment.category.name
+                if establishment.category is not None
+                else ""
+            )
+            if (
+                not location_access
+                and category_type_for_name(category_name)
+                in {"restaurant", "loisir"}
+            ):
+                establishment_data["address"] = None
+                establishment_data["latitude"] = None
+                establishment_data["longitude"] = None
+
+            items.append(
+                {
+                    "id": favorite.id,
+                    "establishment_id": favorite.establishment_id,
+                    "note": favorite.note,
+                    "created_at": favorite.created_at,
+                    "establishment": establishment_data,
+                }
+            )
+
         return {
-            "items": result.scalars().all(),
+            "items": items,
             "total": count_result.scalar_one(),
             "limit": limit,
             "offset": offset,

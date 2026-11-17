@@ -3,17 +3,17 @@
 **Date du relevé :** 7 novembre 2026  
 **Nature :** recommandations d'architecture et de périmètre, sans modification du code.
 
-> **Interprétation validée du besoin :** « partenaire » désigne le rôle actuel `PROPRIETAIRE`; « super admin » désigne le rôle actuel `ADMIN`. Le propriétaire soumet une copie de son registre de commerce et le contrat de partenariat à l'inscription. L'admin valide uniquement le compte propriétaire. Une fois validé, le propriétaire peut publier et gérer librement ses établissements et réservations; l'admin ne valide pas les établissements ni les réservations. Le propriétaire reçoit les paiements et BestRev prélève 10 % sur chaque paiement.
+> **Interprétation validée du besoin :** « partenaire » désigne le rôle actuel `PROPRIETAIRE`; « super admin » désigne le rôle actuel `ADMIN`. Le propriétaire soumet une copie de son registre de commerce et le contrat de partenariat à l'inscription. L'admin valide le compte propriétaire. Une fois validé, le propriétaire peut gérer et publier uniquement des hébergements et leurs réservations; les restaurants et lieux de loisirs, avec toutes leurs données associées, restent sous la responsabilité exclusive de l'administration. L'admin ne valide pas individuellement les hébergements ni leurs réservations. Le propriétaire reçoit les paiements et BestRev prélève 10 % sur chaque paiement.
 
 ## 1. Objectif
 
 Faire évoluer BestRev depuis son fonctionnement actuel vers une répartition claire entre deux rôles existants :
 
-1. **`ADMIN` (administrateur / super admin)** : valide les comptes propriétaires à l'inscription, contrôle les indicateurs globaux et perçoit/suit la commission BestRev de 10 % sur chaque paiement. Il n'approuve pas les établissements ni les opérations de réservation.
+1. **`ADMIN` (administrateur / super admin)** : valide les comptes propriétaires à l'inscription, gère exclusivement les restaurants et lieux de loisirs, contrôle les indicateurs globaux et perçoit/suit la commission BestRev de 10 % sur chaque paiement. Il n'approuve pas individuellement les hébergements ni les opérations de réservation correspondantes.
 
-2. **`PROPRIETAIRE` (partenaire)** : s'inscrit et fournit les documents requis; après validation de son compte, gère entièrement son profil, ses établissements, leurs médias, équipements, tarifs, disponibilités et réservations, ainsi que ses revenus et paiements.
+2. **`PROPRIETAIRE` (partenaire)** : s'inscrit et fournit les documents requis; après validation de son compte, gère entièrement son profil, ses hébergements, leurs médias, équipements, tarifs, disponibilités et réservations, ainsi que ses revenus et paiements.
 
-Le rôle `CLIENT` et ses parcours de réservation doivent continuer à fonctionner. Le propriétaire peut publier ses établissements après approbation de son compte, mais ne peut accéder aux ressources d'un autre propriétaire. La validation du compte est la seule étape d'approbation opérée par `ADMIN`.
+Le rôle `CLIENT` et ses parcours de réservation doivent continuer à fonctionner. Le propriétaire peut publier ses hébergements après approbation de son compte, mais ne peut accéder ni aux ressources d'un autre propriétaire ni aux restaurants et lieux de loisirs. L'administration conserve la gestion complète de ces deux catégories.
 
 ## 2. État actuel pertinent
 
@@ -22,9 +22,9 @@ Le rôle `CLIENT` et ses parcours de réservation doivent continuer à fonctionn
 | Rôles | [`app/models/enums.py`](./app/models/enums.py) définit déjà `CLIENT`, `PROPRIETAIRE` et `ADMIN`. | Les rôles conviennent à la répartition demandée; c'est surtout l'autorisation des routes qui doit évoluer. Pas besoin d'introduire `PARTNER` ou `SUPER_ADMIN`. |
 | Utilisateurs | [`app/models/user.py`](./app/models/user.py) porte le rôle et `UserStatus`, qui comprend `EN_ATTENTE`, `ACTIF`, `INACTIF` et `SUSPENDU`. | Définir comment le statut du compte propriétaire reflète la validation admin; éviter de confondre validation du dossier et suspension ultérieure du compte. |
 | Relation établissement-propriétaire | [`app/models/establishment.py`](./app/models/establishment.py) possède déjà `owner_id` vers `users`; un propriétaire peut avoir plusieurs établissements. | Cette relation convient au besoin. Il faut l'utiliser pour filtrer et autoriser toutes les opérations de l'espace propriétaire. |
-| Création d'établissement | [`app/api/admin/establishments.py`](./app/api/admin/establishments.py) est protégée par `require_admin`; la création associe l'établissement à l'admin courant. | Déplacer le CRUD vers des routes propriétaire et renseigner `owner_id` avec le compte courant. Après validation du compte propriétaire, il peut publier sans validation admin individuelle. |
+| Création d'établissement | [`app/api/admin/establishments.py`](./app/api/admin/establishments.py) est protégée par `require_admin`; la création associe l'établissement à l'admin courant. | Réserver la gestion des restaurants et lieux de loisirs à l'administration. Les routes propriétaire gèrent uniquement les hébergements et renseignent `owner_id` avec le compte courant; leur publication ne requiert pas de validation admin individuelle. |
 | Inscription et validation | [`app/api/user.py`](./app/api/user.py) expose l'inscription; [`app/schemas/auth.py`](./app/schemas/auth.py) ne demande actuellement que l'e-mail et le mot de passe. [`app/models/validation_document.py`](./app/models/validation_document.py) rattache les justificatifs à un établissement. | Ajouter dès l'inscription propriétaire le registre de commerce et le contrat de partenariat, avec revue/approbation admin avant activation de l'espace propriétaire. Autoriser la correction et la resoumission d'un dossier rejeté. |
-| Modération d'établissement | `EstablishmentStatus` comprend `EN_ATTENTE`, `PUBLIE`, `REJETE`, `SUSPENDU`. | Ne pas imposer de validation admin par établissement. Définir les statuts utilisés pour la publication autonome par un propriétaire dont le compte est validé; conserver les états existants seulement si des cas de suspension/retrait restent nécessaires. |
+| Modération d'établissement | `EstablishmentStatus` comprend `EN_ATTENTE`, `PUBLIE`, `REJETE`, `SUSPENDU`. | Autoriser la publication autonome des seuls hébergements par un propriétaire dont le compte est validé. La création, la modification et la publication des restaurants et lieux de loisirs restent réservées à l'administration. |
 | Réservations | [`app/models/reservation.py`](./app/models/reservation.py) relie réservation, client et établissement; il conserve des montants et des traces d'état. | Exposer au propriétaire la gestion complète des réservations de ses établissements, avec filtrage strict par `owner_id`; `ADMIN` n'intervient pas dans leur validation opérationnelle selon la décision actuelle. |
 | Finances | La réservation conserve `commission_rate`, `commission_amount`, `partner_amount`; [`app/config.py`](./app/config.py) contient des taux par catégorie. [`app/models/transaction.py`](./app/models/transaction.py) trace paiements et remboursements. | Appliquer une commission BestRev fixe de 10 % sur chaque paiement. Aucun mécanisme de partage automatique, de collecte de commission, de rapprochement ou de relevé propriétaire n'a été identifié. |
 | Disponibilités | L'établissement a un état global de disponibilité, une capacité et des champs tarifaires. | Ajouter un inventaire quotidien exprimé en chambres/unités, modifiable par le propriétaire et cohérent avec les réservations existantes. |
@@ -33,7 +33,7 @@ Le rôle `CLIENT` et ses parcours de réservation doivent continuer à fonctionn
 | Statistiques et paramètres | Services globaux dans [`app/services/stats.py`](./app/services/stats.py); paramètres de plateforme dans le modèle dédié. | Pas de vues filtrées par partenaire. Le routeur défini dans [`app/api/settings.py`](./app/api/settings.py) n'est pas monté dans [`app/main.py`](./app/main.py), à vérifier avant de bâtir l'administration des réglages dessus. |
 | Médias et équipements | Les routes d'administration d'images et d'équipements demandent `require_admin`. | Donner ces capacités au propriétaire pour ses établissements uniquement, en filtrant par `owner_id`. |
 
-Le dépôt possède déjà le rôle `PROPRIETAIRE` et la relation `Establishment.owner_id`. L'évolution consiste à autoriser ce rôle à gérer tout son périmètre après validation de son compte, sans approbation admin établissement par établissement. La documentation métier initiale décrivait un lancement sans espace Owner ([`bestrev-regles-metier-reservation.md`](./bestrev-regles-metier-reservation.md)); le besoin actuel remplace cette hypothèse.
+Le dépôt possède déjà le rôle `PROPRIETAIRE` et la relation `Establishment.owner_id`. Le propriétaire gère uniquement les hébergements après validation de son compte, sans approbation admin établissement par établissement; l'administration reste seule responsable des restaurants et lieux de loisirs. La documentation métier initiale décrivait un lancement sans espace Owner ([`bestrev-regles-metier-reservation.md`](./bestrev-regles-metier-reservation.md)); le besoin actuel remplace cette hypothèse.
 
 ## 3. Modèle de rôles retenu
 
@@ -192,7 +192,7 @@ Les routes actuelles d'administration des utilisateurs constituent un point de d
 ### `PROPRIETAIRE` — partenaire
 
 - profil : consultation et modification des informations autorisées, documents, logo et coordonnées;
-- établissements : après approbation du compte, créer, publier, modifier et gérer exclusivement ses établissements, médias, équipements, tarifs et inventaire journalier;
+- établissements : après approbation du compte, créer, publier, modifier et gérer exclusivement ses hébergements, médias, équipements, tarifs et inventaire journalier; aucun accès aux restaurants ou lieux de loisirs;
 - réservations : gestion complète des réservations de ses établissements et accès aux informations client requises;
 - finances : recevoir les paiements, consulter les 10 % prélevés par BestRev, ses montants nets et ses relevés;
 - statistiques : réservations, établissements performants, chiffre d'affaires et taux d'occupation par chambre/unité.
@@ -205,17 +205,17 @@ Les routes existantes de gestion des établissements, médias et équipements so
 |---|---:|---:|---:|
 | Consulter les établissements publiés | Oui | Oui | Oui |
 | Gérer son profil et ses documents | Non | Son propre compte | Tous / revue |
-| Créer/modifier ses établissements | Non | Oui, uniquement les siens | Non |
-| Publier/gérer un établissement | Non | Oui, les siens après validation de son compte | Pas de validation obligatoire |
-| Consulter les réservations | Ses réservations | Toutes celles de ses établissements | Suivi global éventuel |
-| Gérer une réservation | Non | Oui, entièrement pour ses établissements | Pas d'approbation opérationnelle |
+| Créer/modifier ses établissements | Non | Oui, uniquement ses hébergements | Oui pour les restaurants et lieux de loisirs |
+| Publier/gérer un établissement | Non | Oui, ses hébergements après validation de son compte | Gestion exclusive des restaurants et lieux de loisirs |
+| Consulter les réservations | Ses réservations | Celles de ses hébergements | Suivi global éventuel |
+| Gérer une réservation | Non | Oui, pour ses hébergements | Pour les restaurants et lieux de loisirs |
 | Consulter les données client | Ses propres données | Oui, toutes les données nécessaires à son activité | Selon nécessité de suivi |
 | Gérer les catégories ou paramètres globaux | Non | Non | Oui |
 | Consulter les finances | Ses paiements | Paiements reçus, commission prélevée et relevés propres | Commission BestRev globale de 10 % |
 | Définir/modifier la commission | Non | Non | Oui; règle retenue actuellement : 10 % par paiement |
 | Consulter/administrer un autre propriétaire | Non | Non | Oui |
 
-Cette matrice reflète les décisions données : le propriétaire gère son activité et ses réservations; l'admin valide son compte et suit la commission. Les modalités de remboursement et de traitement des litiges restent à formaliser.
+Cette matrice reflète les décisions données : le propriétaire gère ses hébergements et leurs réservations; l'administration gère exclusivement les restaurants et lieux de loisirs, valide les comptes propriétaires et suit la commission. Les modalités de remboursement et de traitement des litiges restent à formaliser.
 
 ## 9. Parcours recommandés
 
@@ -225,14 +225,14 @@ Cette matrice reflète les décisions données : le propriétaire gère son acti
 2. Le compte/dossier reste en attente; la vérification d'e-mail seule ne débloque pas les fonctions propriétaire.
 3. `ADMIN` examine les deux pièces et approuve ou rejette le compte avec motif; la décision est journalisée.
 4. Si le dossier est rejeté, le candidat peut corriger/remplacer les documents et resoumettre; l'accès reste bloqué jusqu'à l'approbation.
-5. Après approbation admin, le propriétaire peut gérer son compte et publier ses établissements sans validation individuelle.
+5. Après approbation admin, le propriétaire peut gérer son compte et publier uniquement ses hébergements sans validation individuelle. Les routes propriétaires refusent toute catégorie non reconnue comme hébergement et masquent ses ressources associées.
 6. Une suspension ultérieure du compte (si elle fait partie de la politique retenue) bloque ses opérations sans détruire ses établissements ni les données financières.
 
 ### Publication d'un établissement
 
-1. Le propriétaire dont le compte est validé crée et publie un établissement qui lui appartient.
-2. Le serveur fixe automatiquement `owner_id`; aucune validation admin établissement par établissement n'est demandée.
-3. Le propriétaire gère ensuite le contenu, les médias, les équipements, les tarifs et les disponibilités.
+1. Le propriétaire dont le compte est validé crée et publie un hébergement qui lui appartient.
+2. Le serveur vérifie la catégorie et fixe automatiquement `owner_id`; une catégorie restaurant ou loisirs est refusée par les routes propriétaires.
+3. Le propriétaire gère ensuite le contenu, les médias, les équipements, les tarifs et les disponibilités de ses hébergements.
 4. Les mécanismes de signalement, suspension ou retrait par l'admin en cas d'abus restent à définir séparément; ils ne constituent pas une approbation préalable à la publication.
 
 ### Réservation et règlements
@@ -278,7 +278,7 @@ Tester les migrations sur une copie de données représentative et vérifier les
 - Rôles inchangés : `PROPRIETAIRE` = partenaire; `ADMIN` = super admin.
 - Documents requis à l'inscription du propriétaire : copie du registre de commerce et contrat de partenariat.
 - Un dossier rejeté peut être corrigé et resoumis.
-- Après validation du compte, le propriétaire peut publier et gérer librement ses établissements; l'admin ne valide pas les établissements.
+- Après validation du compte, le propriétaire peut publier et gérer ses hébergements sans approbation individuelle. Les restaurants et lieux de loisirs restent exclusivement gérés par l'administration.
 - Le propriétaire gère ses réservations et voit les informations nécessaires des clients.
 - BestRev prélève 10 % sur chaque paiement; le propriétaire reçoit son paiement.
 - L'inventaire d'hébergement est quotidien et exprimé en chambres/unités.
@@ -294,6 +294,6 @@ Ces points ne remettent pas en cause les décisions métier déjà fixées; ils 
 
 ## Conclusion
 
-La transition ne nécessite pas de refaire tout le backend ni de créer de nouveaux rôles ou un modèle d'entreprise distinct : `PROPRIETAIRE`, `ADMIN` et `Establishment.owner_id` fournissent les fondations nécessaires. Le changement central est de transférer le CRUD des établissements et la gestion des réservations vers le propriétaire, avec des vérifications d'accès par `owner_id`. L'admin valide les comptes propriétaires et non les établissements.
+La transition ne nécessite pas de refaire tout le backend ni de créer de nouveaux rôles ou un modèle d'entreprise distinct : `PROPRIETAIRE`, `ADMIN` et `Establishment.owner_id` fournissent les fondations nécessaires. Le propriétaire gère les hébergements et leurs réservations, avec des vérifications d'accès par `owner_id` et par catégorie. L'administration conserve la gestion exclusive des restaurants et lieux de loisirs; elle valide les comptes propriétaires, sans approuver individuellement les hébergements.
 
-Les principales lacunes à traiter sont l'inscription propriétaire avec les deux documents et la resoumission après rejet, les autorisations par `owner_id`, l'inventaire quotidien par chambre/unité et le partage/traçage financier des 10 % par paiement. La validation du compte propriétaire est le seul contrôle préalable effectué par l'admin.
+Les principales lacunes à traiter sont l'inscription propriétaire avec les deux documents et la resoumission après rejet, les autorisations par `owner_id` et par catégorie, l'inventaire quotidien par chambre/unité et le partage/traçage financier des 10 % par paiement. Pour les hébergements, la validation du compte propriétaire est le seul contrôle préalable effectué par l'admin.

@@ -72,7 +72,10 @@ async def get_my_establishment(
         db,
         owner_id=actor.id,
     )
-    data = establishment_service.serialize_detail(establishment)
+    data = establishment_service.serialize_detail(
+        establishment,
+        location_access=True,
+    )
     data["status"] = establishment.status
     return data
 
@@ -89,6 +92,10 @@ async def create_establishment(
     actor: User = Depends(require_proprietaire),
     db: AsyncSession = Depends(get_session),
 ):
+    await establishment_service._validate_owner_category(
+        data.category_id,
+        db,
+    )
     await establishment_service._validate_references(
         data.category_id,
         data.subcategory_id,
@@ -167,6 +174,11 @@ async def update_establishment(
         "subcategory_id", establishment.subcategory_id
     )
     location_id = changes.get("location_id", establishment.location_id)
+
+    await establishment_service._validate_owner_category(
+        category_id,
+        db,
+    )
 
     if (
         "category_id" in changes
@@ -257,6 +269,10 @@ async def update_establishment_status(
     )
 
     if data.status == EstablishmentStatus.PUBLIE:
+        await establishment_service._validate_owner_category(
+            establishment.category_id,
+            db,
+        )
         await establishment_service._validate_references(
             establishment.category_id,
             establishment.subcategory_id,

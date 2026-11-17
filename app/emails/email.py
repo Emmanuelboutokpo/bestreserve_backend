@@ -101,7 +101,7 @@ def get_email_template(
                 background-color: #1a1a1a;
                 padding: 30px;
                 text-align: center;
-                color: #d4af37;
+                color: #38a169;
             }}
 
             .header h1 {{
@@ -127,7 +127,7 @@ def get_email_template(
 
             .btn {{
                 display: inline-block;
-                background-color: #d4af37;
+                background-color: #218c5a;
                 color: #ffffff !important;
                 padding: 14px 28px;
                 text-decoration: none;
@@ -138,26 +138,32 @@ def get_email_template(
 
             .otp-box {{
                 background: #f4f4f4;
-                border: 2px dashed #d4af37;
+                border: 2px dashed #218c5a;
                 padding: 20px;
                 text-align: center;
                 font-size: 32px;
                 font-weight: bold;
                 letter-spacing: 5px;
                 margin: 20px 0;
-                color: #1a1a1a;
+                color: #176b45;
             }}
 
             .brand {{
-                color: #d4af37;
+                color: #218c5a;
                 font-weight: bold;
             }}
 
             .details {{
-                background: #f8f8f8;
+                background: #f2faf5;
+                border-left: 4px solid #218c5a;
                 padding: 16px;
                 border-radius: 6px;
                 margin: 20px 0;
+            }}
+
+            .details strong,
+            .important {{
+                color: #176b45;
             }}
         </style>
     </head>
@@ -172,7 +178,7 @@ def get_email_template(
             </div>
 
             <div class="content">
-                <h2 style="color: #1a1a1a;">
+                <h2 style="color: #176b45;">
                     {safe_title}
                 </h2>
 
@@ -584,4 +590,209 @@ def send_refund_email(
             content,
             "Confirmation de remboursement",
         ),
+    )
+
+
+def send_owner_application_received_email(
+    *,
+    email: str,
+    name: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>
+            Votre dossier propriétaire a bien été transmis à notre équipe.
+            Il sera examiné par l'administration.
+        </p>
+        <div class="details">
+            <p class="important"><strong>Statut :</strong> En cours d'examen</p>
+        </div>
+        <p>Vous recevrez un nouvel email dès qu'une décision sera prise.</p>
+    """
+    return send_email(
+        email=email,
+        subject="Dossier propriétaire reçu - BestReservs",
+        html_body=get_email_template(content, "Votre dossier a été reçu"),
+    )
+
+
+def send_owner_application_submitted_admin_email(
+    *,
+    email: str,
+    owner_name: str,
+    owner_email: str,
+    application_id: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour,</p>
+        <p>
+            Un propriétaire vient de soumettre un dossier qui nécessite
+            une évaluation par l'administration.
+        </p>
+        <div class="details">
+            <p><strong>Propriétaire :</strong> {escape(owner_name)}</p>
+            <p><strong>Email :</strong> {escape(owner_email)}</p>
+            <p><strong>Identifiant du dossier :</strong> {escape(application_id)}</p>
+            <p class="important"><strong>Statut :</strong> En attente d'évaluation</p>
+        </div>
+    """
+    return send_email(
+        email=email,
+        subject="Nouveau dossier propriétaire à évaluer - BestReservs",
+        html_body=get_email_template(
+            content,
+            "Nouveau dossier propriétaire à évaluer",
+        ),
+    )
+
+
+def send_owner_application_approved_email(
+    *,
+    email: str,
+    name: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>
+            Bonne nouvelle : votre dossier propriétaire a été
+            <strong class="important">approuvé</strong>.
+        </p>
+        <div class="details">
+            <p class="important">
+                <strong>Votre espace propriétaire est maintenant accessible.</strong>
+            </p>
+        </div>
+        <p>Vous pouvez désormais gérer vos hébergements sur BestReservs.</p>
+    """
+    return send_email(
+        email=email,
+        subject="Votre dossier propriétaire a été approuvé",
+        html_body=get_email_template(content, "Dossier propriétaire approuvé"),
+    )
+
+
+def send_owner_application_rejected_email(
+    *,
+    email: str,
+    name: str,
+    rejection_reason: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>Après examen, votre dossier propriétaire n'a pas été approuvé.</p>
+        <div class="details">
+            <p><strong>Motif :</strong></p>
+            <p>{escape(rejection_reason)}</p>
+        </div>
+        <p>
+            Vous pouvez corriger les éléments indiqués et soumettre un nouveau
+            dossier depuis votre compte.
+        </p>
+    """
+    return send_email(
+        email=email,
+        subject="Mise à jour de votre dossier propriétaire",
+        html_body=get_email_template(content, "Votre dossier nécessite une correction"),
+    )
+
+
+def send_reservation_refused_email(
+    *,
+    email: str,
+    name: str,
+    reservation_reference: str,
+    establishment_name: str,
+    refusal_reason: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>Votre demande de réservation n'a malheureusement pas été acceptée.</p>
+        <div class="details">
+            <p><strong>Référence :</strong> {escape(reservation_reference)}</p>
+            <p><strong>Établissement :</strong> {escape(establishment_name)}</p>
+            <p><strong>Motif :</strong> {escape(refusal_reason)}</p>
+        </div>
+        <p>Vous pouvez consulter les autres établissements disponibles sur BestReservs.</p>
+    """
+    return send_email(
+        email=email,
+        subject=f"Réservation refusée - {reservation_reference}",
+        html_body=get_email_template(content, "Votre réservation n'a pas été acceptée"),
+    )
+
+
+def send_reservation_completed_email(
+    *,
+    email: str,
+    name: str,
+    reservation_reference: str,
+    establishment_name: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>Votre réservation est maintenant terminée.</p>
+        <div class="details">
+            <p><strong>Référence :</strong> {escape(reservation_reference)}</p>
+            <p><strong>Établissement :</strong> {escape(establishment_name)}</p>
+        </div>
+        <p>Merci d'avoir choisi BestReservs. Nous espérons vous revoir bientôt !</p>
+    """
+    return send_email(
+        email=email,
+        subject=f"Réservation terminée - {reservation_reference}",
+        html_body=get_email_template(content, "Merci pour votre réservation"),
+    )
+
+
+def send_location_access_payment_email(
+    *,
+    email: str,
+    name: str,
+    amount: str,
+    transaction_reference: str,
+) -> dict:
+    content = f"""
+        <p>Bonjour {escape(name)},</p>
+        <p>
+            Votre paiement a été vérifié et l'accès aux adresses et
+            localisations précises est maintenant activé sur votre compte.
+        </p>
+        <div class="details">
+            <p><strong>Montant payé :</strong> {escape(amount)}</p>
+            <p>
+                <strong>Référence de transaction :</strong>
+                {escape(transaction_reference)}
+            </p>
+            <p class="important"><strong>Accès :</strong> Activé sans limite de durée</p>
+        </div>
+        <p>Merci d'utiliser BestReservs !</p>
+    """
+    return send_email(
+        email=email,
+        subject="Accès aux localisations activé - BestReservs",
+        html_body=get_email_template(content, "Votre accès est activé"),
+    )
+
+
+def send_password_changed_email(
+    *,
+    email: str,
+) -> dict:
+    content = """
+        <p>Le mot de passe de votre compte BestReservs vient d'être modifié.</p>
+        <div class="details">
+            <p class="important">
+                <strong>Si vous êtes à l'origine de cette modification, aucune
+                action n'est nécessaire.</strong>
+            </p>
+        </div>
+        <p>
+            Si vous n'avez pas effectué cette modification, contactez notre
+            équipe dès que possible afin de sécuriser votre compte.
+        </p>
+    """
+    return send_email(
+        email=email,
+        subject="Mot de passe modifié - BestReservs",
+        html_body=get_email_template(content, "Alerte de sécurité"),
     )

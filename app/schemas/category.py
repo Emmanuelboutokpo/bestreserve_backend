@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CategoryCreate(BaseModel):
@@ -35,19 +35,13 @@ class CategoryPatch(BaseModel):
             raise ValueError("Le nom doit contenir au moins deux caractères.")
         return value
 
-    @model_validator(mode="after")
-    def validate_changes(self):
-        if not self.model_fields_set:
-            raise ValueError("Aucune information à modifier.")
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("Le nom ne peut pas être nul.")
-        return self
-
-
 class CategoryPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     icon: str | None
+    img: str | None
     created_at: datetime
 
 

@@ -44,6 +44,7 @@ from app.schemas.reservation import ReservationCreate
 from app.models.notification import Notification
 from app.models.enums import NotificationType
 from app.services.notifi_dispatcher import dispatch_email
+from app.services.owner_scope import owner_establishment_ids
 from app.emails import email as email_service
 
 ZERO = Decimal("0.00")
@@ -1155,9 +1156,7 @@ async def get_admin_reservation(
     if owner_id is not None:
         stmt = stmt.where(
             Reservation.establishment_id.in_(
-                select(Establishment.id).where(
-                    Establishment.owner_id == owner_id
-                )
+                owner_establishment_ids(owner_id)
             )
         )
     if for_update:
@@ -1364,9 +1363,7 @@ def _apply_filters(
     if owner_id is not None:
         stmt = stmt.where(
             Reservation.establishment_id.in_(
-                select(Establishment.id).where(
-                    Establishment.owner_id == owner_id
-                )
+                owner_establishment_ids(owner_id)
             )
         )
     return stmt
@@ -1892,6 +1889,25 @@ async def update_reservation_status(
             establishment_name=_reservation_establishment_name(reservation),
             cancellation_reason=reservation.cancellation_reason,
         )
+    elif new_status == ReservationStatus.REFUSEE:
+        _send_reservation_email(
+            event="reservation.refused",
+            sender=email_service.send_reservation_refused_email,
+            reservation=reservation,
+            name=_reservation_client_name(reservation),
+            reservation_reference=reservation.reference,
+            establishment_name=_reservation_establishment_name(reservation),
+            refusal_reason=reservation.refusal_reason or "",
+        )
+    elif new_status == ReservationStatus.TERMINEE:
+        _send_reservation_email(
+            event="reservation.completed",
+            sender=email_service.send_reservation_completed_email,
+            reservation=reservation,
+            name=_reservation_client_name(reservation),
+            reservation_reference=reservation.reference,
+            establishment_name=_reservation_establishment_name(reservation),
+        )
     return reservation
 
 
@@ -1984,9 +2000,7 @@ async def get_reservation_stats(
     if owner_id is not None:
         stmt = stmt.where(
             Reservation.establishment_id.in_(
-                select(Establishment.id).where(
-                    Establishment.owner_id == owner_id
-                )
+                owner_establishment_ids(owner_id)
             )
         )
     result = await session.execute(stmt)

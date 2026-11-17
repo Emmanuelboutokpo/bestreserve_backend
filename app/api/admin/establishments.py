@@ -60,6 +60,9 @@ async def get_establishment_admin(
         establishment_id,
         db,
     )
-    data = establishment_service.serialize_detail(establishment)
+    data = establishment_service.serialize_detail(
+        establishment,
+        location_access=True,
+    )
     data["status"] = establishment.status
     return data

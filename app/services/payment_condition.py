@@ -14,6 +14,7 @@ from app.schemas.payment_condition import (
     PaymentConditionCreate,
     PaymentConditionUpdate,
 )
+from app.services.owner_scope import owner_establishment_ids
 
 
 # =========================================================
@@ -164,7 +165,9 @@ async def _get_establishment_for_payment_conditions(
         Establishment.id == establishment_id
     )
     if owner_id is not None:
-        statement = statement.where(Establishment.owner_id == owner_id)
+        statement = statement.where(
+            Establishment.id.in_(owner_establishment_ids(owner_id))
+        )
     if for_update:
         statement = statement.with_for_update()
 

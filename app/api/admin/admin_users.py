@@ -12,7 +12,6 @@ from sqlmodel import select
 from app.cores.db import get_session
 from app.cores.redis import save_otp
 from app.dependencies.dependencies import require_admin
-from app.emails.email import send_otp_email
 from app.models import ActivityLog, User, Profile
 from app.models.enums import UserRole, UserStatus
 from app.schemas.admin_user import (
@@ -25,6 +24,7 @@ from app.schemas.admin_user import (
 )
 from app.schemas.auth import UserPublic
 from app.services.user import UserService
+from app.services.notifi_dispatcher import notify_otp
 from app.utils import generate_password_hash
 
 
@@ -211,7 +211,7 @@ async def create_user(
     await session.refresh(user, ["profile"])
     otp = f"{secrets.randbelow(900000) + 100000}"
     await save_otp(user.email, otp, expiry=300)
-    send_otp_email(user.email, otp)
+    notify_otp(recipient=user.email, otp=otp)
     return user
 
 
@@ -259,24 +259,8 @@ async def update_user(
     if email_changed:
         otp = f"{secrets.randbelow(900000) + 100000}"
         await save_otp(user.email, otp, expiry=300)
-        send_otp_email(user.email, otp)
+        notify_otp(recipient=user.email, otp=otp)
     return user
-
-
-@admin_user_router.delete("/{user_id}")
-async def disable_user(
-    user_id: UUID,
-    request: Request,
-    actor: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    user = await _get_active_partner(user_id, session)
-
-    user.status = UserStatus.INACTIF
-    user.token_version += 1
-    _audit(session, actor, "ADMIN_USER_DISABLED", user, request)
-    await session.commit()
-    return {"message": "Utilisateur désactivé."}
 
 
 @admin_user_router.patch("/{user_id}/status", response_model=UserPublic)

@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cores.db import get_session
+from app.dependencies.dependencies import get_optional_current_user
+from app.models.user import User
 from app.schemas.establishment import (
     EstablishmentDetailPublic,
     EstablishmentListItem,
@@ -13,6 +15,7 @@ from app.schemas.establishment import (
     ReviewPage
 )
 from app.services.establishment import establishment_service
+from app.services.location_access import has_location_access
 
 
 establishments_router = APIRouter(
@@ -107,7 +110,13 @@ async def list_establishments(
 
     # Base de données
     db: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
+    location_access = (
+        await has_location_access(current_user.id, db)
+        if current_user is not None
+        else False
+    )
     return await establishment_service.list_establishments(
         db,
 
@@ -145,6 +154,7 @@ async def list_establishments(
         sort=sort,
         limit=limit,
         offset=offset,
+        location_access=location_access,
     )
 
 
@@ -159,15 +169,22 @@ async def list_popular_establishments(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     """
     Retourne les établissements publiés les plus populaires.
     """
 
+    location_access = (
+        await has_location_access(current_user.id, db)
+        if current_user is not None
+        else False
+    )
     return await establishment_service.list_popular_establishments(
         db,
         limit=limit,
         offset=offset,
+        location_access=location_access,
     )
 
 # ---------- ÉTABLISSEMENTS PROCHES ----------
@@ -184,12 +201,18 @@ async def list_nearby_establishments(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     """
     Recherche les établissements publiés à proximité
     d'une position géographique.
     """
 
+    location_access = (
+        await has_location_access(current_user.id, db)
+        if current_user is not None
+        else False
+    )
     return await establishment_service.list_nearby_establishments(
         db,
         latitude=latitude,
@@ -197,6 +220,7 @@ async def list_nearby_establishments(
         radius_km=radius_km,
         limit=limit,
         offset=offset,
+        location_access=location_access,
     )
 
 @establishments_router.get(
@@ -207,11 +231,20 @@ async def list_nearby_establishments(
 async def get_establishment(
     slug: str,
     db: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     establishment = (
         await establishment_service.get_establishment_by_slug(db, slug)
     )
-    return establishment_service.serialize_detail(establishment)
+    location_access = (
+        await has_location_access(current_user.id, db)
+        if current_user is not None
+        else False
+    )
+    return establishment_service.serialize_detail(
+        establishment,
+        location_access=location_access,
+    )
 
 
 @establishments_router.get(
@@ -242,9 +275,16 @@ async def list_similar_establishments(
     establishment_id: UUID,
     limit: int = Query(default=8, ge=1, le=50),
     db: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
+    location_access = (
+        await has_location_access(current_user.id, db)
+        if current_user is not None
+        else False
+    )
     return await establishment_service.list_similar(
         db=db,
         establishment_id=establishment_id,
         limit=limit,
+        location_access=location_access,
     )

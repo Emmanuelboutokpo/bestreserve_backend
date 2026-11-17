@@ -20,6 +20,22 @@ from app.schemas.reservation import (
     ReservationCancelRequest,
 )
 from app.services import reservation as reservation_service
+from app.services.location_access import has_location_access
+from app.services.owner_scope import category_type_for_name
+
+
+def _client_reservation_response(reservation, *, location_access: bool):
+    response = ReservationPublic.model_validate(reservation)
+    if (
+        not location_access
+        and reservation.category
+        and category_type_for_name(reservation.category)
+        in {"restaurant", "loisir"}
+        and response.establishment is not None
+    ):
+        response.establishment.address = None
+    return response
+
 
 reservations_router = APIRouter(tags=["Réservations"])
 
@@ -78,13 +94,24 @@ async def list_my_reservations(
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
 ):
-    return await reservation_service.list_client_reservations(
+    result = await reservation_service.list_client_reservations(
         user_id=current_user.id,
         session=session,
         page=page,
         page_size=page_size,
         status_filter=status_filter,
     )
+    location_access = await has_location_access(current_user.id, session)
+    return {
+        **result,
+        "items": [
+            _client_reservation_response(
+                item,
+                location_access=location_access,
+            )
+            for item in result["items"]
+        ],
+    }
 
 
 @reservations_router.get(
@@ -97,10 +124,15 @@ async def get_my_reservation(
     current_user: Annotated[User, Depends(require_client)],
     session: AsyncSession = Depends(get_session),
 ):
-    return await reservation_service.get_client_reservation_by_reference(
+    reservation = await reservation_service.get_client_reservation_by_reference(
         reference=reference,
         user_id=current_user.id,
         session=session,
+    )
+    location_access = await has_location_access(current_user.id, session)
+    return _client_reservation_response(
+        reservation,
+        location_access=location_access,
     )
 
 
@@ -126,12 +158,17 @@ async def create_reservation(
         ),
     ),
 ):
-    return await reservation_service.create_client_reservation(
+    reservation = await reservation_service.create_client_reservation(
         data=data,
         current_user=current_user,
         session=session,
         request=request,
         idempotency_key=idempotency_key,
+    )
+    location_access = await has_location_access(current_user.id, session)
+    return _client_reservation_response(
+        reservation,
+        location_access=location_access,
     )
 
 
@@ -147,10 +184,15 @@ async def cancel_reservation(
     session: AsyncSession = Depends(get_session),
     data: ReservationCancelRequest | None = None,
 ):
-    return await reservation_service.cancel_client_reservation(
+    reservation = await reservation_service.cancel_client_reservation(
         reservation_id=reservation_id,
         user_id=current_user.id,
         session=session,
         request=request,
         reason=data.reason if data else None,
+    )
+    location_access = await has_location_access(current_user.id, session)
+    return _client_reservation_response(
+        reservation,
+        location_access=location_access,
     )

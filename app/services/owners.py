@@ -14,7 +14,12 @@ from app.helpers.cloudinary import (
 )
 from app.models import OwnerApplication, User
 from app.models.base import utc_now
-from app.models.enums import OwnerApplicationStatus, UserRole
+from app.models.enums import OwnerApplicationStatus, UserRole, UserStatus
+from app.services.notifi_dispatcher import (
+    notify_admin_owner_application_submitted,
+    notify_owner_application_received,
+    notify_owner_application_reviewed,
+)
 from app.schemas.owners import (
     OwnerApplicationDecision,
     OwnerApplicationOwner,
@@ -173,6 +178,19 @@ class OwnerApplicationService:
                 ),
             )
 
+        admin_result = await session.execute(
+            select(User.email).where(
+                User.role == UserRole.ADMIN,
+                User.status == UserStatus.ACTIF,
+                User.is_deleted.is_(False),
+            )
+        )
+        admin_emails = admin_result.scalars().all()
+        if not admin_emails:
+            logger.warning(
+                "No active admin found to notify about an owner application"
+            )
+
         (
             registry_contents,
             registry_name,
@@ -236,6 +254,29 @@ class OwnerApplicationService:
                 .where(OwnerApplication.id == application.id)
             )
             application = application_result.scalars().one()
+            profile = application.owner.profile
+            owner_name = (
+                " ".join(
+                    part
+                    for part in (
+                        profile.firstName if profile else None,
+                        profile.lastName if profile else None,
+                    )
+                    if part
+                )
+                or "Propriétaire"
+            )
+            notify_owner_application_received(
+                recipient=application.owner.email,
+                name=owner_name,
+            )
+            for admin_email in admin_emails:
+                notify_admin_owner_application_submitted(
+                    recipient=admin_email,
+                    owner_name=owner_name,
+                    owner_email=application.owner.email,
+                    application_id=str(application.id),
+                )
             return self._to_public(application)
         except Exception:
             await session.rollback()
@@ -377,6 +418,24 @@ class OwnerApplicationService:
             application.status.value,
             reviewer.id,
             application.reviewed_at.isoformat(),
+        )
+        profile = application.owner.profile
+        owner_name = (
+            " ".join(
+                part
+                for part in (
+                    profile.firstName if profile else None,
+                    profile.lastName if profile else None,
+                )
+                if part
+            )
+            or "Propriétaire"
+        )
+        notify_owner_application_reviewed(
+            recipient=application.owner.email,
+            name=owner_name,
+            approved=application.status == OwnerApplicationStatus.APPROUVE,
+            rejection_reason=application.rejection_reason,
         )
         return self._to_public(application)
 

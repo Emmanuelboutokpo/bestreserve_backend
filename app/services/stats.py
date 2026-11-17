@@ -30,6 +30,7 @@ from app.models.enums import (
     UserRole,
     UserStatus,
 )
+from app.services.owner_scope import owner_establishment_ids
 
 ZERO = Decimal("0.00")
 MAX_PERIOD_DAYS = 366 * 5
@@ -102,15 +103,9 @@ def _safe_csv_cell(value: Any) -> str:
     return text
 
 
-def _owner_establishment_ids(owner_id: UUID):
-    return select(Establishment.id).where(
-        Establishment.owner_id == owner_id
-    )
-
-
 def _owner_reservation_filter(owner_id: UUID):
     return Reservation.establishment_id.in_(
-        _owner_establishment_ids(owner_id)
+        owner_establishment_ids(owner_id)
     )
 
 
@@ -159,7 +154,7 @@ async def get_stats_overview(
         User.status == UserStatus.ACTIF,
     )
     establishment_filters = (
-        (Establishment.owner_id == owner_id,)
+        (Establishment.id.in_(owner_establishment_ids(owner_id)),)
         if owner_id is not None
         else ()
     )
@@ -312,7 +307,9 @@ async def get_stats_establishments(
     start, end = _date_bounds(start_date, end_date)
     filters = _in_period(Establishment.created_at, start, end)
     if owner_id is not None:
-        filters.append(Establishment.owner_id == owner_id)
+        filters.append(
+            Establishment.id.in_(owner_establishment_ids(owner_id))
+        )
     result = await session.execute(
         select(
             func.count(Establishment.id),
@@ -432,7 +429,11 @@ async def get_top_destinations(
             Location.is_active.is_(True),
             *_in_period(Reservation.created_at, start, end),
             *(
-                [Establishment.owner_id == owner_id]
+                [
+                    Establishment.id.in_(
+                        owner_establishment_ids(owner_id)
+                    )
+                ]
                 if owner_id is not None
                 else []
             ),
@@ -479,7 +480,11 @@ async def get_top_establishments(
         .where(
             *_in_period(Reservation.created_at, start, end),
             *(
-                [Establishment.owner_id == owner_id]
+                [
+                    Establishment.id.in_(
+                        owner_establishment_ids(owner_id)
+                    )
+                ]
                 if owner_id is not None
                 else []
             ),
@@ -544,7 +549,9 @@ async def get_reservations_chart(
         )
     filters = _in_period(Reservation.created_at, start, end)
     if owner_id is not None:
-        filters.append(Establishment.owner_id == owner_id)
+        filters.append(
+            Establishment.id.in_(owner_establishment_ids(owner_id))
+        )
     result = await session.execute(
         query.where(*filters)
         .group_by(bucket)
@@ -570,7 +577,11 @@ async def get_categories_chart(
         .where(
             *_in_period(Establishment.created_at, start, end),
             *(
-                [Establishment.owner_id == owner_id]
+                [
+                    Establishment.id.in_(
+                        owner_establishment_ids(owner_id)
+                    )
+                ]
                 if owner_id is not None
                 else []
             ),

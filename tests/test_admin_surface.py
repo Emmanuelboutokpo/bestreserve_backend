@@ -1,3 +1,9 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
+
+import pytest
+
 from app.main import app
 
 
@@ -8,6 +14,74 @@ def test_admin_establishment_endpoints_are_read_only():
     assert set(paths["/api/v1/admin/establishments/{establishment_id}"]) == {
         "get"
     }
+
+
+def test_admin_manages_restaurants_and_leisure_establishments():
+    paths = app.openapi()["paths"]
+    managed = "/api/v1/admin/managed-establishments"
+
+    assert set(paths[managed]) == {"get", "post"}
+    assert set(paths[f"{managed}/{{establishment_id}}"]) == {
+        "get",
+        "patch",
+        "delete",
+    }
+    assert f"{managed}/{{establishment_id}}/status" not in paths
+    assert set(
+        paths[f"{managed}/{{establishment_id}}/availability"]
+    ) == {"patch"}
+
+
+@pytest.mark.anyio
+async def test_admin_managed_establishment_starts_published():
+    from app.api.admin import managed_establishments
+    from app.models.enums import EstablishmentStatus
+    from app.schemas.establishment import EstablishmentCreate
+
+    service = managed_establishments.establishment_service
+    session = SimpleNamespace(
+        add=Mock(),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+    actor = SimpleNamespace(id=uuid4())
+    request = SimpleNamespace(client=None, headers={})
+    data = EstablishmentCreate(
+        category_id=uuid4(),
+        location_id=uuid4(),
+        address="Adresse",
+        name="Restaurant de test",
+    )
+
+    with (
+        patch.object(
+            managed_establishments,
+            "validate_admin_managed_category",
+            new=AsyncMock(return_value="restaurant"),
+        ),
+        patch.object(
+            service,
+            "_validate_references",
+            new=AsyncMock(),
+        ),
+        patch.object(
+            service,
+            "_slugify",
+            return_value="restaurant-de-test",
+        ),
+        patch.object(service, "_ensure_slug", new=AsyncMock()),
+        patch.object(service, "_audit", new=Mock()),
+    ):
+        establishment = await managed_establishments.create_managed_establishment(
+            data,
+            request,
+            actor,
+            session,
+        )
+
+    assert establishment.status == EstablishmentStatus.PUBLIE
+    session.commit.assert_awaited_once()
 
 
 def test_admin_owner_application_review_endpoints_are_available():
@@ -39,14 +113,55 @@ def test_admin_catalog_and_global_reporting_routes_are_available():
     assert "/api/v1/admin/categories" in paths
     assert "/api/v1/admin/payments/stats" in paths
     assert "/api/v1/admin/stats/overview" in paths
-    for path in (
-        "/api/v1/admin/locations",
-        "/api/v1/admin/amenities",
-        "/api/v1/admin/reviews",
-        "/api/v1/admin/subcategories",
-        "/api/v1/admin/payment-conditions",
-    ):
+    assert set(paths["/api/v1/admin/locations"]) == {"post"}
+    assert set(paths["/api/v1/admin/amenities"]) == {"post"}
+    assert "/api/v1/admin/reviews" not in paths
+    for path in ("/api/v1/admin/subcategories",):
         assert path not in paths
+    assert "/api/v1/admin/payment-conditions" in paths
+    assert (
+        "/api/v1/admin/establishments/{establishment_id}/photos"
+        in paths
+    )
+    assert (
+        "/api/v1/admin/establishments/{establishment_id}/amenities"
+        in paths
+    )
+    assert "/api/v1/admin/reservations" in paths
+
+
+def test_admin_can_manage_own_account_profile_password_and_avatar():
+    paths = app.openapi()["paths"]
+
+    assert set(paths["/api/v1/admin/accounts/me"]) == {"get", "patch"}
+    assert set(paths["/api/v1/admin/accounts/me/password"]) == {"put"}
+    assert set(paths["/api/v1/admin/accounts/me/avatar"]) == {
+        "post",
+        "delete",
+    }
+    assert "/api/v1/accounts/me" not in paths or set(
+        paths["/api/v1/accounts/me"]
+    ) == {"get", "patch"}
+    assert "/api/v1/admin/accounts/{user_id}" not in paths
+
+
+def test_admin_category_write_routes_accept_uploaded_images():
+    paths = app.openapi()["paths"]
+
+    assert set(paths["/api/v1/admin/categories"]) == {"post"}
+    assert set(paths["/api/v1/admin/categories/{category_id}"]) == {
+        "patch",
+        "delete",
+    }
+    assert set(
+        paths["/api/v1/admin/categories/{category_id}/image"]
+    ) == {"delete"}
+    for path, method in (
+        ("/api/v1/admin/categories", "post"),
+        ("/api/v1/admin/categories/{category_id}", "patch"),
+    ):
+        request_body = paths[path][method]["requestBody"]
+        assert "multipart/form-data" in request_body["content"]
 
 
 def test_admin_users_support_partner_operations_and_owner_relationships():
@@ -57,7 +172,6 @@ def test_admin_users_support_partner_operations_and_owner_relationships():
     assert set(paths["/api/v1/admin/users/{user_id}"]) == {
         "get",
         "patch",
-        "delete",
     }
     assert set(paths["/api/v1/admin/users/{user_id}/status"]) == {"patch"}
     assert "/api/v1/admin/users/{user_id}/role" not in paths

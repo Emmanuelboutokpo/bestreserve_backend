@@ -220,7 +220,7 @@ class ReservationEstablishmentPublic(BaseModel):
     id: UUID
     name: str
     slug: str
-    address: str
+    address: str | None
 
 
 # =========================================================

@@ -8,6 +8,7 @@ from app.dependencies.dependencies import require_proprietaire
 from app.models import User
 from app.schemas.subcategory import SubcategoryCreate, SubcategoryPublic, SubcategoryPatch
 from app.services.subcategory import SubcategoryService
+from app.services.owner_scope import validate_owner_category
 
 owner_subcategories_router = APIRouter(
     prefix="/owners/categories",
@@ -30,6 +31,7 @@ async def create_subcategory(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    await validate_owner_category(category_id, session)
     return await subcategory_service.create(
         category_id,
         data,
@@ -51,6 +53,13 @@ async def update_subcategory(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    subcategory = await subcategory_service.get_or_404(
+        subcategory_id,
+        session,
+    )
+    await validate_owner_category(subcategory.category_id, session)
+    if data.category_id is not None:
+        await validate_owner_category(data.category_id, session)
     return await subcategory_service.update(
         subcategory_id, data, actor, request, session
     )
@@ -63,6 +72,11 @@ async def delete_subcategory(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    subcategory = await subcategory_service.get_or_404(
+        subcategory_id,
+        session,
+    )
+    await validate_owner_category(subcategory.category_id, session)
     return await subcategory_service.delete(
         subcategory_id, actor, request, session
     )

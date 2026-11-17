@@ -135,7 +135,7 @@ async def test_admin_create_creates_unverified_partner_and_sends_otp(monkeypatch
     save_otp = AsyncMock()
     send_email = Mock()
     monkeypatch.setattr(admin_users, "save_otp", save_otp)
-    monkeypatch.setattr(admin_users, "send_otp_email", send_email)
+    monkeypatch.setattr(admin_users, "notify_otp", send_email)
 
     result = await admin_users.create_user(
         AdminUserCreate(
@@ -155,5 +155,5 @@ async def test_admin_create_creates_unverified_partner_and_sends_otp(monkeypatch
     assert result.created_by == actor.id
     assert verify_password("SecurePass1!", result.password)
     assert save_otp.await_count == 1
-    assert send_email.call_count == 1
-    assert send_email.call_args.args[0] == "partner@example.com"
+    send_email.assert_called_once()
+    assert send_email.call_args.kwargs["recipient"] == "partner@example.com"

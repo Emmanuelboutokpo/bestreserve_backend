@@ -8,6 +8,7 @@ from app.dependencies.dependencies import require_client
 from app.models import User
 from app.schemas.favorite import FavoritePage
 from app.services.favorite import FavoriteService
+from app.services.location_access import has_location_access
 
 
 favorites_router = APIRouter(
@@ -28,11 +29,13 @@ async def list_my_favorites(
     current_user: User = Depends(require_client),
     session: AsyncSession = Depends(get_session),
 ):
+    location_access = await has_location_access(current_user.id, session)
     return await FavoriteService.list_my_favorites(
         user_id=current_user.id,
         session=session,
         limit=limit,
         offset=offset,
+        location_access=location_access,
     )
 
 

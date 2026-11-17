@@ -228,7 +228,7 @@ class EstablishmentPublic(BaseModel):
     category_id: UUID
     subcategory_id: UUID | None
     location_id: UUID
-    address: str
+    address: str | None
     latitude: Decimal | None
     longitude: Decimal | None
     name: str

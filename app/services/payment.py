@@ -33,7 +33,9 @@ from app.models.enums import (
 from app.models.user import User
 from app.models.reservation import Reservation
 from app.models.transaction import Transaction
+from app.models.location_access_payment import LocationAccessPayment
 from app.models.establishment import Establishment
+from app.services.owner_scope import owner_establishment_ids
 
 logger = logging.getLogger(__name__)
 
@@ -592,6 +594,22 @@ async def confirm_payment(
                 ),
             )
 
+        result = await session.execute(
+            select(LocationAccessPayment.id).where(
+                LocationAccessPayment.provider == PAYMENT_PROVIDER,
+                LocationAccessPayment.provider_transaction_id
+                == provider_transaction_id,
+            )
+        )
+        if result.first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Cette transaction KKiaPay est déjà associée "
+                    "à un paiement d'accès."
+                ),
+            )
+
         remote = await verify_remote_transaction(provider_transaction_id)
 
         remote_id = get_remote_value(
@@ -838,11 +856,11 @@ def _parse_transaction_type(
 def _owner_payment_filter(owner_id: UUID):
     owner_reservation_ids = (
         select(Reservation.id)
-        .join(
-            Establishment,
-            Establishment.id == Reservation.establishment_id,
+        .where(
+            Reservation.establishment_id.in_(
+                owner_establishment_ids(owner_id)
+            )
         )
-        .where(Establishment.owner_id == owner_id)
     )
     return Transaction.reservation_id.in_(owner_reservation_ids)
 

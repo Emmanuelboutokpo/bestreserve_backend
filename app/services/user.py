@@ -16,6 +16,7 @@ from app.models import (
     User as UserModel,
 )
 from app.models.enums import UserRole, UserStatus
+from app.services.owner_scope import owner_establishment_ids
 from app.utils import generate_password_hash, verify_password
 
 
@@ -210,7 +211,11 @@ class UserService:
                 Establishment,
                 Establishment.id == Reservation.establishment_id,
             )
-            .where(Establishment.owner_id == owner_id)
+            .where(
+                Establishment.id.in_(
+                    owner_establishment_ids(owner_id)
+                )
+            )
             .distinct()
         )
 
@@ -307,7 +312,9 @@ class UserService:
             )
             .where(
                 Reservation.user_id == user_id,
-                Establishment.owner_id == owner_id,
+                Establishment.id.in_(
+                    owner_establishment_ids(owner_id)
+                ),
             )
             .order_by(Reservation.created_at.desc(), Reservation.id.desc())
             .offset(offset)
@@ -332,7 +339,9 @@ class UserService:
             )
             .where(
                 Favorite.user_id == user_id,
-                Establishment.owner_id == owner_id,
+                Establishment.id.in_(
+                    owner_establishment_ids(owner_id)
+                ),
             )
             .order_by(Favorite.created_at.desc(), Favorite.id.desc())
             .offset(offset)
@@ -357,7 +366,9 @@ class UserService:
             )
             .where(
                 Reservation.user_id == user_id,
-                Establishment.owner_id == owner_id,
+                Establishment.id.in_(
+                    owner_establishment_ids(owner_id)
+                ),
             )
         )
         result = await session.execute(

@@ -148,10 +148,16 @@ async def test_owner_subcategory_creation_uses_admin_category_and_owner_audit():
     )
     service_create = AsyncMock(return_value=expected)
 
-    with patch.object(
-        subcategories.subcategory_service,
-        "create",
-        new=service_create,
+    with (
+        patch(
+            "app.api.owners.subcategories.validate_owner_category",
+            new=AsyncMock(),
+        ),
+        patch.object(
+            subcategories.subcategory_service,
+            "create",
+            new=service_create,
+        ),
     ):
         response = await subcategories.create_subcategory(
             category_id,

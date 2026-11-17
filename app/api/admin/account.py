@@ -8,7 +8,6 @@ from app.dependencies.dependencies import require_admin
 from app.models import User
 
 from app.schemas.account import (
-    AccountDeleteRequest,
     AccountProfilePatch,
     PasswordChangeRequest,
 )
@@ -17,7 +16,7 @@ from app.services.account import AccountService
 
 
 admin_account_router = APIRouter(
-    prefix="/accounts",
+    prefix="/admin/accounts",
     tags=["Admin - Comptes Administrateurs"],
     dependencies=[Depends(require_admin)],
 )
@@ -25,78 +24,40 @@ admin_account_router = APIRouter(
 account_service = AccountService()
 
 
-@admin_account_router.patch("/{user_id}", response_model=UserPublic)
-async def admin_update_user(
-    user_id: UUID,
+@admin_account_router.patch("/me", response_model=UserPublic)
+async def admin_update_my_account(
     data: AccountProfilePatch,
-    actor: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    return await account_service.admin_update_profile(
-        user_id=user_id,
-        data=data,
-        session=session,
-        owner_id=actor.id,
-    )
+    return await account_service.update_profile(current_user, data, session)
 
 
-@admin_account_router.delete("/{user_id}")
-async def admin_delete_user(
-    user_id: UUID,
-    data: AccountDeleteRequest,
-    actor: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    return await account_service.admin_delete_account(
-        user_id=user_id,
-        session=session,
-        owner_id=actor.id,
-    )
-
-
-@admin_account_router.put("/{user_id}/password")
-async def admin_change_user_password(
-    user_id: UUID,
+@admin_account_router.put("/me/password")
+async def admin_change_my_password(
     data: PasswordChangeRequest,
-    actor: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    return await account_service.admin_change_password(
-        user_id=user_id,
-        new_password=data.new_password,
-        session=session,
-        owner_id=actor.id,
-    )
+    return await account_service.change_password(current_user, data, session)
 
 
-@admin_account_router.post(
-    "/{user_id}/avatar",
-    dependencies=[Depends(require_admin)]
-)
-async def admin_upload_user_avatar(
-    user_id: UUID,
-    actor: User = Depends(require_admin),
+@admin_account_router.post("/me/avatar", response_model=UserPublic)
+async def admin_upload_my_avatar(
     avatar: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    return await account_service.admin_upload_avatar(
-        user_id,
-        avatar,
-        session,
-        owner_id=actor.id,
-    )
+    return await account_service.upload_avatar(current_user, avatar, session)
 
-@admin_account_router.delete("/{user_id}/avatar", response_model=UserPublic)
-async def admin_delete_user_avatar(
-    user_id: UUID,
-    actor: User = Depends(require_admin),
+
+@admin_account_router.delete("/me/avatar", response_model=UserPublic)
+async def admin_delete_my_avatar(
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    return await account_service.admin_delete_avatar(
-        user_id=user_id,
-        session=session,
-        owner_id=actor.id,
-    )
+    return await account_service.delete_avatar(current_user, session)
+
 
 @admin_account_router.get("/me", response_model=UserPublic)
 async def get_admin_me(

@@ -138,6 +138,44 @@ async def get_current_user(
 
     return user
 
+
+async def get_optional_current_user(
+    token_details: dict | None = Depends(
+        AccessTokenBearer(auto_error=False)
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> User | None:
+    if token_details is None:
+        return None
+
+    subject = token_details.get("sub")
+    try:
+        user_id = UUID(subject)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = await session.execute(
+        select(User)
+        .options(selectinload(User.profile))
+        .where(
+            User.id == user_id,
+            User.is_deleted.is_(False),
+        )
+    )
+    user = result.scalars().first()
+    if not user or user.status != UserStatus.ACTIF:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Compte inexistant ou indisponible.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
+
     
 def require_client(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.CLIENT:

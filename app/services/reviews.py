@@ -18,6 +18,7 @@ from app.schemas.reviews import (
     ReviewPage,
     ReviewUpdate,
 )
+from app.services.owner_scope import owner_establishment_ids
 
 from sqlalchemy.orm import selectinload
 
@@ -51,9 +52,7 @@ async def _get_review(
     if owner_id is not None:
         query = query.where(
             Review.establishment_id.in_(
-                select(Establishment.id).where(
-                    Establishment.owner_id == owner_id
-                )
+                owner_establishment_ids(owner_id)
             )
         )
 
@@ -359,11 +358,10 @@ async def list_admin_reviews(
             Review.establishment_id == establishment_id
         )
     if owner_id is not None:
-        owner_establishment_ids = select(Establishment.id).where(
-            Establishment.owner_id == owner_id
-        )
         query = query.where(
-            Review.establishment_id.in_(owner_establishment_ids)
+            Review.establishment_id.in_(
+                owner_establishment_ids(owner_id)
+            )
         )
 
     # Compter les avis correspondant aux filtres.
@@ -384,9 +382,7 @@ async def list_admin_reviews(
     if owner_id is not None:
         count_query = count_query.where(
             Review.establishment_id.in_(
-                select(Establishment.id).where(
-                    Establishment.owner_id == owner_id
-                )
+                owner_establishment_ids(owner_id)
             )
         )
 

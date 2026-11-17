@@ -37,6 +37,29 @@ class PaymentConfirmRequest(BaseModel):
         max_length=255,
     )
 
+
+class LocationAccessCheckoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payment_method: PaymentMethod
+
+
+class LocationAccessStatus(BaseModel):
+    has_access: bool
+    purchased_at: datetime | None = None
+
+
+class LocationAccessPaymentPublic(BaseModel):
+    transaction_ref: str
+    amount: Decimal
+    currency: str
+    status: PaymentStatus
+    provider: str
+    created_at: datetime
+    updated_at: datetime
+    has_access: bool
+
+
 class PaymentPublic(BaseModel):
     transaction_ref: str
     reservation_reference: str

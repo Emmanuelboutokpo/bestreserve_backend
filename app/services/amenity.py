@@ -15,6 +15,7 @@ from app.models import (
     User,
 )
 from app.schemas.amenity import AmenityCreate, AmenityPatch
+from app.services.owner_scope import owner_establishment_ids
 
 
 class AmenityService:
@@ -50,7 +51,7 @@ class AmenityService:
         )
         if owner_id is not None:
             statement = statement.where(
-                Establishment.owner_id == owner_id
+                Establishment.id.in_(owner_establishment_ids(owner_id))
             )
 
         if for_update:

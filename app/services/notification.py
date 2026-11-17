@@ -12,6 +12,7 @@ from sqlmodel import select
 from app.models.notification import Notification
 from app.models.enums import NotificationType, UserRole
 from app.models import Establishment, Reservation, User
+from app.services.owner_scope import owner_establishment_ids
 
 from datetime import datetime, timezone
 from typing import Any
@@ -289,7 +290,11 @@ async def create_admin_notification(
                     Establishment,
                     Establishment.id == Reservation.establishment_id,
                 )
-                .where(Establishment.owner_id == owner_id)
+                .where(
+                    Establishment.id.in_(
+                        owner_establishment_ids(owner_id)
+                    )
+                )
                 .distinct()
             )
         )

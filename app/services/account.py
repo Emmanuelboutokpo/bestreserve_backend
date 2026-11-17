@@ -33,6 +33,8 @@ from app.schemas.account import (
     PasswordChangeRequest,
 )
 from app.services.oauth import OAuthService
+from app.services.notifi_dispatcher import notify_password_changed
+from app.services.owner_scope import owner_establishment_ids
 from app.utils import generate_password_hash, verify_password
 
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
@@ -200,6 +202,7 @@ class AccountService:
         user.password = generate_password_hash(data.new_password)
         user.token_version += 1
         await session.commit()
+        notify_password_changed(recipient=user.email)
         return {"message": "Mot de passe modifié. Reconnectez-vous."}
 
     # ─── Avatar ───────────────────────────────────────────────────────────
@@ -404,6 +407,7 @@ class AccountService:
         await session.commit()
         return {"message": "Notification supprimée."}
         # ============================================================
+ 
     # ADMIN - GESTION DES COMPTES UTILISATEURS
     # ============================================================
 
@@ -428,7 +432,11 @@ class AccountService:
                         Establishment,
                         Establishment.id == Reservation.establishment_id,
                     )
-                    .where(Establishment.owner_id == owner_id)
+                    .where(
+                        Establishment.id.in_(
+                            owner_establishment_ids(owner_id)
+                        )
+                    )
                     .distinct()
                 )
             )
@@ -504,6 +512,7 @@ class AccountService:
         user.provider = UserProvider.LOCAL
 
         await session.commit()
+        notify_password_changed(recipient=user.email)
 
         return {
             "message": "Mot de passe réinitialisé avec succès. "

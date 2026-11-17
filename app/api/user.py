@@ -24,12 +24,6 @@ from app.dependencies.dependencies import (
     RefreshTokenBearer,
 )
 
-from app.emails.email import (
-    send_confirmation_email,
-    send_otp_email,
-    send_reset_password_email,
-)
-
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -39,6 +33,12 @@ from app.schemas.auth import (
 )
 
 from app.services.user import UserService
+from app.services.notifi_dispatcher import (
+    notify_account_confirmed,
+    notify_otp,
+    notify_password_changed,
+    notify_password_reset_requested,
+)
 from app.utils import generateAccessToken, generate_password_hash
 
 
@@ -74,10 +74,7 @@ async def signup(
             expiry=300,
         )
 
-        send_otp_email(
-            user_data.email,
-            otp,
-        )
+        notify_otp(recipient=user_data.email, otp=otp)
 
         return JSONResponse(
             content={
@@ -109,7 +106,7 @@ async def signup_owner(
         new_user = await users.signup_owner(user_data, session)
         otp = f"{random.randint(100000, 999999)}"
         await save_otp(new_user.email, otp, expiry=300)
-        send_otp_email(new_user.email, otp)
+        notify_otp(recipient=new_user.email, otp=otp)
         return JSONResponse(
             content={
                 "message": (
@@ -194,9 +191,9 @@ async def verify_account(
         else "Utilisateur"
     )
 
-    send_confirmation_email(
-        user.email,
-        firstName,
+    notify_account_confirmed(
+        recipient=user.email,
+        name=firstName,
     )
 
     return {
@@ -259,10 +256,7 @@ async def resend_otp(
         seconds=60,
     )
 
-    send_otp_email(
-        user_data.email,
-        otp,
-    )
+    notify_otp(recipient=user_data.email, otp=otp)
 
     return {
         "message": "OTP renvoyé avec succès."
@@ -407,9 +401,9 @@ async def forgot_password(
         token,
     )
 
-    send_reset_password_email(
-        user_data.email,
-        token,
+    notify_password_reset_requested(
+        recipient=user_data.email,
+        token=token,
     )
 
     return {
@@ -467,6 +461,7 @@ async def reset_password(
     await delete_reset_token(
         reset_data.token
     )
+    notify_password_changed(recipient=user.email)
 
     return {
         "message": "Mot de passe modifié avec succès."

@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cores.db import get_session
 from app.dependencies.dependencies import require_client
-from app.models.enums import TransactionType
+from app.models.enums import PaymentStatus, TransactionType
+from app.models.location_access_payment import LocationAccessPayment
 from app.models.reservation import Reservation
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -17,11 +18,19 @@ from app.schemas.payments import (
     CheckoutResponse,
     PaymentConfirmRequest,
     PaymentPublic,
+    LocationAccessCheckoutRequest,
+    LocationAccessPaymentPublic,
+    LocationAccessStatus,
 )
 from app.services.payment import (
     confirm_payment,
     create_payment,
     verify_webhook_secret,
+)
+from app.services.location_access import (
+    confirm_location_access_payment,
+    create_location_access_payment,
+    get_location_access_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +122,69 @@ async def confirm_checkout(
 
 
 @payments_router.post(
+    "/location-access/checkout",
+    response_model=CheckoutResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_location_access_checkout(
+    data: LocationAccessCheckoutRequest,
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=255,
+        description="Clé réutilisée lors de toute reprise du paiement d'accès.",
+    ),
+    current_user: User = Depends(require_client),
+    session: AsyncSession = Depends(get_session),
+):
+    return await create_location_access_payment(
+        user_id=current_user.id,
+        payment_method=data.payment_method,
+        idempotency_key=idempotency_key,
+        session=session,
+    )
+
+
+@payments_router.post(
+    "/location-access/confirm",
+    response_model=LocationAccessPaymentPublic,
+)
+async def confirm_location_access_checkout(
+    data: PaymentConfirmRequest,
+    current_user: User = Depends(require_client),
+    session: AsyncSession = Depends(get_session),
+):
+    payment = await confirm_location_access_payment(
+        transaction_ref=data.transaction_ref,
+        provider_transaction_id=data.provider_transaction_id,
+        user_id=current_user.id,
+        session=session,
+    )
+    return {
+        "transaction_ref": payment.transaction_ref,
+        "amount": payment.amount,
+        "currency": payment.currency,
+        "status": payment.status,
+        "provider": payment.provider,
+        "created_at": payment.created_at,
+        "updated_at": payment.updated_at,
+        "has_access": payment.status == PaymentStatus.PAYE,
+    }
+
+
+@payments_router.get(
+    "/location-access",
+    response_model=LocationAccessStatus,
+)
+async def location_access_status(
+    current_user: User = Depends(require_client),
+    session: AsyncSession = Depends(get_session),
+):
+    return await get_location_access_status(current_user.id, session)
+
+
+@payments_router.post(
     "/webhook/kkiapay",
     status_code=status.HTTP_200_OK,
 )
@@ -187,6 +259,27 @@ async def kkiapay_webhook(
     transaction = result.scalars().first()
 
     if transaction is None:
+        access_result = await session.execute(
+            select(LocationAccessPayment).where(
+                LocationAccessPayment.provider == PAYMENT_PROVIDER,
+                LocationAccessPayment.provider_transaction_id
+                == provider_transaction_id,
+            )
+        )
+        access_payment = access_result.scalars().first()
+        if access_payment is not None:
+            await confirm_location_access_payment(
+                transaction_ref=access_payment.transaction_ref,
+                provider_transaction_id=provider_transaction_id,
+                user_id=access_payment.user_id,
+                session=session,
+            )
+            return {
+                "received": True,
+                "processed": True,
+                "event": event_name,
+            }
+
         # KKiaPay peut notifier avant que /confirm ait enregistré l'identifiant.
         # On accuse réception pour éviter des retries inutiles, mais on ne marque
         # surtout pas l'événement comme traité côté paiement.

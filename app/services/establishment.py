@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 from datetime import date, time
 
@@ -27,6 +27,12 @@ from app.models import (
 from app.models.enums import (
     EstablishmentStatus,
     ReservationStatus,
+)
+from app.services.owner_scope import (
+    admin_managed_establishment_ids,
+    category_type_for_name,
+    owner_establishment_ids,
+    validate_owner_category,
 )
 
 
@@ -199,12 +205,27 @@ class EstablishmentService:
     def serialize_list_item(
         cls,
         establishment: Establishment,
+        *,
+        location_access: bool = False,
     ) -> dict[str, Any]:
         amenities = [
             cls._serialize_model(link.amenity)
             for link in (establishment.amenity_links or [])
             if link.amenity is not None
         ]
+        location_is_protected = (
+            not location_access
+            and establishment.category is not None
+            and category_type_for_name(establishment.category.name)
+            in {"restaurant", "loisir"}
+        )
+        location = cls._serialize_model(establishment.location)
+        if location_is_protected and location is not None:
+            location = {
+                "id": establishment.location.id,
+                "name": establishment.location.name,
+                "type": establishment.location.type,
+            }
 
         return {
             "id": establishment.id,
@@ -214,9 +235,9 @@ class EstablishmentService:
             "name": establishment.name,
             "slug": establishment.slug,
             "description": establishment.description,
-            "address": establishment.address,
-            "latitude": establishment.latitude,
-            "longitude": establishment.longitude,
+            "address": None if location_is_protected else establishment.address,
+            "latitude": None if location_is_protected else establishment.latitude,
+            "longitude": None if location_is_protected else establishment.longitude,
 
             # Relations nécessaires à la liste
             "category": cls._serialize_model(
@@ -225,9 +246,7 @@ class EstablishmentService:
             "subcategory": cls._serialize_model(
                 establishment.subcategory
             ),
-            "location": cls._serialize_model(
-                establishment.location
-            ),
+            "location": location,
 
             # Note et nombre d'avis
             "rating": establishment.rating,
@@ -263,6 +282,8 @@ class EstablishmentService:
     def serialize_detail(
         cls,
         establishment: Establishment,
+        *,
+        location_access: bool = False,
     ) -> dict[str, Any]:
         photos = list(establishment.photos or [])
 
@@ -319,6 +340,20 @@ class EstablishmentService:
                 "avatar_url": profile.img if profile else None,
             }
 
+        location_is_protected = (
+            not location_access
+            and establishment.category is not None
+            and category_type_for_name(establishment.category.name)
+            in {"restaurant", "loisir"}
+        )
+        location = cls._serialize_model(establishment.location)
+        if location_is_protected and location is not None:
+            location = {
+                "id": establishment.location.id,
+                "name": establishment.location.name,
+                "type": establishment.location.type,
+            }
+
         return {
             "id": establishment.id,
             "category_id": establishment.category_id,
@@ -327,9 +362,9 @@ class EstablishmentService:
             "name": establishment.name,
             "slug": establishment.slug,
             "description": establishment.description,
-            "address": establishment.address,
-            "latitude": establishment.latitude,
-            "longitude": establishment.longitude,
+            "address": None if location_is_protected else establishment.address,
+            "latitude": None if location_is_protected else establishment.latitude,
+            "longitude": None if location_is_protected else establishment.longitude,
 
             # Relations complètes
             "category": cls._serialize_model(
@@ -338,9 +373,7 @@ class EstablishmentService:
             "subcategory": cls._serialize_model(
                 establishment.subcategory
             ),
-            "location": cls._serialize_model(
-                establishment.location
-            ),
+            "location": location,
             "owner": owner,
             "photos": serialized_photos,
             "amenities": amenities,
@@ -400,6 +433,7 @@ class EstablishmentService:
         activity_type_id: Optional[UUID] = None,
         activity_date: Optional[date] = None,
         participants: Optional[int] = None,
+        location_access: bool = False,
     ) -> dict[str, Any]:
 
         # ---------------------------------------------------------
@@ -692,7 +726,10 @@ class EstablishmentService:
 
         return {
             "items": [
-                self.serialize_list_item(item)
+                self.serialize_list_item(
+                    item,
+                    location_access=location_access,
+                )
                 for item in establishments
             ],
             "total": total,
@@ -706,6 +743,7 @@ class EstablishmentService:
         *,
         limit: int = 10,
         offset: int = 0,
+        location_access: bool = False,
     ) -> dict[str, Any]:
         """
         Retourne les établissements publics les plus populaires.
@@ -746,7 +784,10 @@ class EstablishmentService:
 
         return {
             "items": [
-                self.serialize_list_item(establishment)
+                self.serialize_list_item(
+                    establishment,
+                    location_access=location_access,
+                )
                 for establishment in establishments
             ],
             "total": total,
@@ -763,6 +804,7 @@ class EstablishmentService:
         radius_km: float = 10,
         limit: int = 10,
         offset: int = 0,
+        location_access: bool = False,
     ) -> dict[str, Any]:
         """
         Retourne les établissements publiés situés dans un rayon donné,
@@ -812,6 +854,10 @@ class EstablishmentService:
                 Establishment.id.asc(),
             )
         )
+        if not location_access:
+            query = query.where(
+                Establishment.id.not_in(admin_managed_establishment_ids())
+            )
 
         # Nombre total de résultats correspondant au rayon.
         count_query = select(func.count()).select_from(
@@ -830,7 +876,10 @@ class EstablishmentService:
 
         return {
             "items": [
-                self.serialize_list_item(establishment)
+                self.serialize_list_item(
+                    establishment,
+                    location_access=location_access,
+                )
                 for establishment in establishments
             ],
             "total": total,
@@ -884,6 +933,7 @@ class EstablishmentService:
         establishment_id: UUID,
         *,
         limit: int = 8,
+        location_access: bool = False,
     ) -> list[dict[str, Any]]:
         establishment = await self.get_establishment_by_id(
             db, establishment_id
@@ -904,7 +954,10 @@ class EstablishmentService:
         )
 
         return [
-            self.serialize_list_item(item)
+            self.serialize_list_item(
+                item,
+                location_access=location_access,
+            )
             for item in result.scalars().unique().all()
         ]
 
@@ -993,7 +1046,9 @@ class EstablishmentService:
             Establishment.id == establishment_id
         )
         if owner_id is not None:
-            query = query.where(Establishment.owner_id == owner_id)
+            query = query.where(
+                Establishment.id.in_(owner_establishment_ids(owner_id))
+            )
 
         if for_update:
             query = query.with_for_update()
@@ -1025,7 +1080,9 @@ class EstablishmentService:
             .where(Photo.id == photo_id)
         )
         if owner_id is not None:
-            query = query.where(Establishment.owner_id == owner_id)
+            query = query.where(
+                Establishment.id.in_(owner_establishment_ids(owner_id))
+            )
 
         result = await db.execute(query)
         photo = result.scalars().first()
@@ -1047,10 +1104,21 @@ class EstablishmentService:
         limit: int = 20,
         offset: int = 0,
         owner_id: Optional[UUID] = None,
+        managed_category: Literal[
+            "restaurant", "loisir", "all"
+        ] | None = None,
     ) -> dict[str, Any]:
         query = self._list_query(include_all_statuses=True)
         if owner_id is not None:
-            query = query.where(Establishment.owner_id == owner_id)
+            query = query.where(
+                Establishment.id.in_(owner_establishment_ids(owner_id))
+            )
+        if managed_category is not None:
+            query = query.where(
+                Establishment.id.in_(
+                    admin_managed_establishment_ids(managed_category)
+                )
+            )
 
         if q:
             query = query.where(
@@ -1091,7 +1159,10 @@ class EstablishmentService:
 
         result = await db.execute(query.offset(offset).limit(limit))
         establishments = result.scalars().unique().all()
-        items = [self.serialize_list_item(item) for item in establishments]
+        items = [
+            self.serialize_list_item(item, location_access=True)
+            for item in establishments
+        ]
         if owner_id is not None:
             for item, establishment in zip(items, establishments):
                 item["status"] = establishment.status
@@ -1175,6 +1246,13 @@ class EstablishmentService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="La sous-catégorie ne correspond pas à la catégorie.",
                 )
+
+    async def _validate_owner_category(
+        self,
+        category_id: UUID,
+        db: AsyncSession,
+    ) -> None:
+        await validate_owner_category(category_id, db)
 
     @staticmethod
     def _audit(

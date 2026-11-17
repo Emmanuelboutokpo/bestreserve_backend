@@ -10,6 +10,7 @@ from app.models.establishment_payment_condition import (
 )
 from app.models.favorite import Favorite
 from app.models.location import Location
+from app.models.location_access_payment import LocationAccessPayment
 from app.models.notification import Notification
 from app.models.owners import OwnerApplication
 from app.models.payment_condition import PaymentCondition
@@ -32,6 +33,7 @@ __all__ = [
     "EstablishmentPaymentCondition",
     "Favorite",
     "Location",
+    "LocationAccessPayment",
     "Notification",
     "OwnerApplication",
     "PaymentCondition",

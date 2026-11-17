@@ -8,6 +8,7 @@ from app.api.account import account_router
 from app.api.categories import categories_router
 from app.api.subcategories import subcategories_router
 from app.api.amenities import amenities_router
+from app.api.amenities import admin_amenities_router
 
 from app.api.establishments import establishments_router
 
@@ -22,6 +23,16 @@ from app.api.locations import locations_router
 from app.api.reservations import reservations_router
 from app.api.payments import payments_router
 from app.api.admin.payments import admin_payments_router
+from app.api.admin.amenities import admin_establishment_amenities_router
+from app.api.admin.establishment_media import (
+    establishment_media_router as admin_establishment_media_router,
+)
+from app.api.admin.locations import admin_locations_router
+from app.api.admin.managed_establishments import (
+    admin_managed_establishments_router,
+)
+from app.api.admin.payment_conditions import admin_payment_conditions_router
+from app.api.admin.reservations import admin_reservations_router
 from app.api.reviews import reviews_router
 from app.api.payment_conditions import payment_conditions_router
 from app.api.user import auth_router
@@ -40,7 +51,6 @@ from app.api.admin.account import admin_account_router
 
 from app.api.owners.amenities import (
     owner_establishment_amenities_router,
-    owner_amenities_router,
 )
 from app.api.owners.establishment_media import establishment_media_router
 from app.api.owners.notifications import owner_notifications_router
@@ -53,7 +63,6 @@ from app.api.owners.reviews import owner_reviews_router
 from app.api.owners.stats import stats_router as owner_stats_router
 from app.api.owners.users import owner_user_router
 from app.api.owners.subcategories import owner_subcategories_router
-from app.api.owners.locations import owner_locations_router
 
 
 origins = [
@@ -136,17 +145,11 @@ app.include_router(
     owner_establishment_amenities_router,
     prefix="/api/v1",
 )
-app.include_router(
-    owner_amenities_router,
-    prefix="/api/v1",
-)
 app.include_router(owner_reservations_router, prefix="/api/v1")
 app.include_router(owner_stats_router, prefix="/api/v1")
 app.include_router(owner_reviews_router, prefix="/api/v1")
 app.include_router(owner_payments_router, prefix="/api/v1")
 app.include_router(owner_payment_conditions_router, prefix="/api/v1")
-app.include_router(owner_locations_router, prefix="/api/v1")
-
 app.include_router(oauth_router, prefix="/api/v1")
 app.include_router(account_router, prefix="/api/v1")
 app.include_router(locations_router, prefix="/api/v1")
@@ -166,8 +169,27 @@ app.include_router(admin_account_router, prefix="/api/v1")
 app.include_router(admin_owner_application_router, prefix="/api/v1")
 app.include_router(admin_user_router, prefix="/api/v1")
 app.include_router(admin_establishments_router, prefix="/api/v1")
+app.include_router(
+    admin_managed_establishments_router,
+    prefix="/api/v1",
+)
 app.include_router(admin_categories_router, prefix="/api/v1")
 app.include_router(admin_payments_router, prefix="/api/v1")
+app.include_router(admin_amenities_router, prefix="/api/v1")
+app.include_router(
+    admin_establishment_amenities_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    admin_establishment_media_router,
+    prefix="/api/v1",
+)
+app.include_router(admin_locations_router, prefix="/api/v1")
+app.include_router(
+    admin_payment_conditions_router,
+    prefix="/api/v1",
+)
+app.include_router(admin_reservations_router, prefix="/api/v1")
 app.include_router(stats_router, prefix="/api/v1")
 
 app.include_router(
