@@ -131,6 +131,7 @@ async def create_user(
         password=generate_password_hash(data.password),
         role=UserRole.CLIENT,
         status=UserStatus.EN_ATTENTE,
+        created_by=actor.id,
     )
     session.add(user)
     await session.flush()

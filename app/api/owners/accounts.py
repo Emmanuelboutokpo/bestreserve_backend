@@ -32,6 +32,9 @@ async def admin_update_user(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    if user_id == actor.id:
+        return await account_service.update_profile(actor, data, session)
+
     return await account_service.admin_update_profile(
         user_id=user_id,
         data=data,
@@ -47,6 +50,9 @@ async def admin_delete_user(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    if user_id == actor.id:
+        return await account_service.delete_account(actor, data, session)
+
     return await account_service.admin_delete_account(
         user_id=user_id,
         session=session,
@@ -61,6 +67,9 @@ async def admin_change_user_password(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    if user_id == actor.id:
+        return await account_service.change_password(actor, data, session)
+
     return await account_service.admin_change_password(
         user_id=user_id,
         new_password=data.new_password,
@@ -79,6 +88,9 @@ async def admin_upload_user_avatar(
     avatar: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ):
+    if user_id == actor.id:
+        return await account_service.upload_avatar(actor, avatar, session)
+
     return await account_service.admin_upload_avatar(
         user_id,
         avatar,
@@ -92,6 +104,9 @@ async def admin_delete_user_avatar(
     actor: User = Depends(require_proprietaire),
     session: AsyncSession = Depends(get_session),
 ):
+    if user_id == actor.id:
+        return await account_service.delete_avatar(actor, session)
+
     return await account_service.admin_delete_avatar(
         user_id=user_id,
         session=session,

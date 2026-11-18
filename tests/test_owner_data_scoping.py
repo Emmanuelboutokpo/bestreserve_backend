@@ -1,7 +1,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +18,17 @@ from app.services.account import AccountService
 from app.services.establishment import EstablishmentService
 from app.services.notification import create_admin_notification
 from app.services.user import UserService
+from app.api.owners.users import create_user as create_owner_user
+from app.api.owners.accounts import (
+    account_service as owner_account_service,
+    admin_change_user_password as change_owner_password,
+    admin_delete_user as delete_owner_account,
+    admin_delete_user_avatar as delete_owner_avatar,
+    admin_upload_user_avatar as upload_owner_avatar,
+    admin_update_user as update_owner_account,
+)
+from app.models import User
+from app.schemas.admin_user import AdminUserCreate
 from app.schemas.account import AccountProfilePatch
 from app.schemas.payment_condition import PaymentConditionCreate
 from app.services.payment import _checkout_amount
@@ -137,7 +148,36 @@ async def test_owner_user_list_only_includes_customers_with_owner_reservations()
     for call in session.execute.await_args_list:
         statement = call.args[0]
         assert "establishments.owner_id" in str(statement)
+        assert "users.created_by" in str(statement)
         assert owner_id in statement.compile().params.values()
+
+
+@pytest.mark.anyio
+async def test_owner_created_client_is_linked_to_creator():
+    owner_id = uuid4()
+    session = _session(
+        add=Mock(),
+        execute=AsyncMock(
+            return_value=SimpleNamespace(first=lambda: None)
+        ),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    created_user = await create_owner_user(
+        AdminUserCreate(
+            email="client@example.com",
+            password="SecurePass1!",
+            firstName="Test",
+        ),
+        SimpleNamespace(client=None, headers={}),
+        SimpleNamespace(id=owner_id),
+        session,
+    )
+
+    assert created_user.created_by == owner_id
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -160,6 +200,7 @@ async def test_owner_user_stats_only_include_customers_with_owner_reservations()
 
     statement = session.execute.await_args.args[0]
     assert "establishments.owner_id" in str(statement)
+    assert "users.created_by" in str(statement)
     assert owner_id in statement.compile().params.values()
 
 
@@ -427,6 +468,105 @@ async def test_owner_account_operations_reject_unrelated_clients():
     assert "establishments.owner_id" in str(statement)
     assert owner_id in statement.compile().params.values()
     assert error.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_owner_can_update_own_profile_by_user_id(monkeypatch):
+    owner = SimpleNamespace(id=uuid4())
+    data = AccountProfilePatch(firstName="Test")
+    session = _session()
+    update_profile = AsyncMock(return_value=owner)
+    update_managed_profile = AsyncMock()
+    monkeypatch.setattr(owner_account_service, "update_profile", update_profile)
+    monkeypatch.setattr(
+        owner_account_service,
+        "admin_update_profile",
+        update_managed_profile,
+    )
+
+    result = await update_owner_account(
+        user_id=owner.id,
+        data=data,
+        actor=owner,
+        session=session,
+    )
+
+    assert result is owner
+    update_profile.assert_awaited_once_with(owner, data, session)
+    update_managed_profile.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_owner_can_manage_own_account_operations_by_user_id(monkeypatch):
+    owner = SimpleNamespace(id=uuid4())
+    session = _session()
+    delete_data = SimpleNamespace()
+    password_data = SimpleNamespace(new_password="NewPassword1!")
+    avatar = SimpleNamespace()
+
+    delete_account = AsyncMock(return_value={"message": "deleted"})
+    change_password = AsyncMock(return_value={"message": "changed"})
+    upload_avatar = AsyncMock(return_value=owner)
+    delete_avatar = AsyncMock(return_value=owner)
+    monkeypatch.setattr(owner_account_service, "delete_account", delete_account)
+    monkeypatch.setattr(owner_account_service, "change_password", change_password)
+    monkeypatch.setattr(owner_account_service, "upload_avatar", upload_avatar)
+    monkeypatch.setattr(owner_account_service, "delete_avatar", delete_avatar)
+
+    assert await delete_owner_account(
+        owner.id, delete_data, actor=owner, session=session
+    ) == {"message": "deleted"}
+    assert await change_owner_password(
+        owner.id, password_data, actor=owner, session=session
+    ) == {"message": "changed"}
+    assert await upload_owner_avatar(
+        owner.id, actor=owner, avatar=avatar, session=session
+    ) is owner
+    assert await delete_owner_avatar(
+        owner.id, actor=owner, session=session
+    ) is owner
+
+    delete_account.assert_awaited_once_with(owner, delete_data, session)
+    change_password.assert_awaited_once_with(owner, password_data, session)
+    upload_avatar.assert_awaited_once_with(owner, avatar, session)
+    delete_avatar.assert_awaited_once_with(owner, session)
+
+
+@pytest.mark.anyio
+async def test_owner_can_upload_avatar_for_client_they_created():
+    owner_id = uuid4()
+    user = User(
+        id=uuid4(),
+        email="client@example.com",
+        role="CLIENT",
+        created_by=owner_id,
+    )
+    session = _session(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                scalars=lambda: SimpleNamespace(first=lambda: user)
+            )
+        )
+    )
+    service = AccountService()
+    service.upload_avatar = AsyncMock(return_value=user)
+
+    result = await service.admin_upload_avatar(
+        user.id,
+        avatar=SimpleNamespace(),
+        session=session,
+        owner_id=owner_id,
+    )
+
+    statement = session.execute.await_args.args[0]
+    assert "users.created_by" in str(statement)
+    assert owner_id in statement.compile().params.values()
+    assert result is user
+    service.upload_avatar.assert_awaited_once_with(
+        user,
+        SimpleNamespace(),
+        session,
+    )
 
 
 @pytest.mark.anyio

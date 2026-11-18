@@ -130,6 +130,12 @@ def test_admin_catalog_and_global_reporting_routes_are_available():
     assert "/api/v1/admin/reservations" in paths
 
 
+def test_owner_account_me_route_is_read_only():
+    paths = app.openapi()["paths"]
+
+    assert set(paths["/api/v1/owners/accounts/me"]) == {"get"}
+
+
 def test_admin_can_manage_own_account_profile_password_and_avatar():
     paths = app.openapi()["paths"]
 

@@ -5,7 +5,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category, Establishment
+from app.models import Category, Establishment, Reservation, User
+from app.models.enums import UserRole
 
 
 _OWNER_LODGING_CATEGORY_NAMES = frozenset(
@@ -159,4 +160,24 @@ def owner_establishment_ids(owner_id: UUID):
                 _OWNER_LODGING_CATEGORY_SQL_NAMES
             ),
         )
+    )
+
+
+def owner_customer_ids(owner_id: UUID):
+    reservation_customer_ids = (
+        select(Reservation.user_id)
+        .join(
+            Establishment,
+            Establishment.id == Reservation.establishment_id,
+        )
+        .where(
+            Establishment.id.in_(owner_establishment_ids(owner_id))
+        )
+    )
+    return select(User.id).where(
+        User.role == UserRole.CLIENT,
+        or_(
+            User.created_by == owner_id,
+            User.id.in_(reservation_customer_ids),
+        ),
     )

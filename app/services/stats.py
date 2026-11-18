@@ -30,7 +30,7 @@ from app.models.enums import (
     UserRole,
     UserStatus,
 )
-from app.services.owner_scope import owner_establishment_ids
+from app.services.owner_scope import owner_customer_ids, owner_establishment_ids
 
 ZERO = Decimal("0.00")
 MAX_PERIOD_DAYS = 366 * 5
@@ -110,11 +110,7 @@ def _owner_reservation_filter(owner_id: UUID):
 
 
 def _owner_user_filter(owner_id: UUID):
-    return User.id.in_(
-        select(Reservation.user_id)
-        .where(_owner_reservation_filter(owner_id))
-        .distinct()
-    )
+    return User.id.in_(owner_customer_ids(owner_id))
 
 
 async def _count(session: AsyncSession, model: Any, *filters: Any) -> int:

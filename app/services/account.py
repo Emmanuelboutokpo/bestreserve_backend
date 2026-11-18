@@ -34,7 +34,7 @@ from app.schemas.account import (
 )
 from app.services.oauth import OAuthService
 from app.services.notifi_dispatcher import notify_password_changed
-from app.services.owner_scope import owner_establishment_ids
+from app.services.owner_scope import owner_customer_ids
 from app.utils import generate_password_hash, verify_password
 
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
@@ -426,19 +426,7 @@ class AccountService:
         if owner_id is not None:
             statement = statement.where(
                 User.role == UserRole.CLIENT,
-                User.id.in_(
-                    select(Reservation.user_id)
-                    .join(
-                        Establishment,
-                        Establishment.id == Reservation.establishment_id,
-                    )
-                    .where(
-                        Establishment.id.in_(
-                            owner_establishment_ids(owner_id)
-                        )
-                    )
-                    .distinct()
-                )
+                User.id.in_(owner_customer_ids(owner_id)),
             )
         result = await session.execute(
             statement

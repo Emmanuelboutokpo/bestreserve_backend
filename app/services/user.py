@@ -16,7 +16,7 @@ from app.models import (
     User as UserModel,
 )
 from app.models.enums import UserRole, UserStatus
-from app.services.owner_scope import owner_establishment_ids
+from app.services.owner_scope import owner_customer_ids, owner_establishment_ids
 from app.utils import generate_password_hash, verify_password
 
 
@@ -205,19 +205,7 @@ class UserService:
 
     @staticmethod
     def _owner_customer_ids(owner_id: UUID):
-        return (
-            select(Reservation.user_id)
-            .join(
-                Establishment,
-                Establishment.id == Reservation.establishment_id,
-            )
-            .where(
-                Establishment.id.in_(
-                    owner_establishment_ids(owner_id)
-                )
-            )
-            .distinct()
-        )
+        return owner_customer_ids(owner_id)
 
     async def list_owner_users(
         self,
