@@ -195,6 +195,11 @@ def test_application_response_includes_owner_profile_details():
 
 def test_admin_notification_email_includes_submission_details(monkeypatch):
     sent = {}
+    monkeypatch.setattr(
+        email_service,
+        "FRONTEND_URL",
+        "https://bestreservs.com",
+    )
 
     def capture_email(*, email, subject, html_body):
         sent.update(
@@ -219,6 +224,10 @@ def test_admin_notification_email_includes_submission_details(monkeypatch):
     assert "&lt;Owner&gt;" in sent["html_body"]
     assert "owner@example.com" in sent["html_body"]
     assert "application-id" in sent["html_body"]
+    assert (
+        'href="https://bestreservs.com/admin/owner-applications"'
+        in sent["html_body"]
+    )
 
 
 @pytest.mark.anyio

@@ -21,7 +21,7 @@ EMAIL_FROM = os.getenv(
 
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
-    "http://localhost:3000",
+    "https://bestreservs.com",
 ).rstrip("/")
 
 
@@ -623,6 +623,7 @@ def send_owner_application_submitted_admin_email(
     owner_email: str,
     application_id: str,
 ) -> dict:
+    review_url = f"{FRONTEND_URL}/admin/validations"
     content = f"""
         <p>Bonjour,</p>
         <p>
@@ -635,6 +636,14 @@ def send_owner_application_submitted_admin_email(
             <p><strong>Identifiant du dossier :</strong> {escape(application_id)}</p>
             <p class="important"><strong>Statut :</strong> En attente d'évaluation</p>
         </div>
+        <p>
+            <a
+                href="{escape(review_url, quote=True)}"
+                style="display:inline-block;padding:12px 20px;background:#1f6feb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold"
+            >
+                Ouvrir les dossiers propriétaires
+            </a>
+        </p>
     """
     return send_email(
         email=email,
